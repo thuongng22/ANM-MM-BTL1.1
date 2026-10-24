@@ -89,7 +89,7 @@ export default function MessageList({ messages, currentUser }) {
                         </div>
                       </div>
                     ) : (
-                      /* Trường hợp tệp KHÁC (PDF, DOCX, TXT...): Render Card phong cách Mercury kèm nút tải về */
+                      /* Trường hợp tệp KHÁC (PDF, DOCX, TXT...): Render Card kèm nút tải về */
                       <a
                         href={msg.attachment.data}
                         download={msg.attachment.name}

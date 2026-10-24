@@ -13,7 +13,7 @@ export default function Header({ username, room, onRoomChange, onLogout, isConne
         </div>
         <div>
           <h1 className="text-on-dark font-medium text-base tracking-wide leading-none">
-            Mercury Chat
+            E2EE Chat
           </h1>
           <div className="flex items-center gap-1.5 text-xs text-fog mt-1">
             <span

@@ -1,6 +1,6 @@
 # Tài liệu Kiến trúc Kỹ thuật (Technical Architecture)
 
-> **Dự án**: Mercury Messenger - Realtime Encrypted Chat System  
+> **Dự án**: E2EE Chat - Realtime Encrypted Chat System  
 > **Phiên bản hiện tại**: Giai đoạn 1 (Realtime Messaging, Base64 File Transfer, JSON Storage)  
 > **Định hướng tiếp theo**: Tích hợp Mã hóa Đầu cuối (End-to-End Encryption - E2EE)
 
@@ -13,7 +13,7 @@ Hệ thống được thiết kế theo mô hình **Client-Server phân tán th�
 ```mermaid
 graph TD
     subgraph Client ["Frontend Client (React 19 + Vite)"]
-        UI["UI Layer (Mercury Dark Mode)"]
+        UI["UI Layer (Dark Mode)"]
         State["State Management (React Hooks + LocalStorage)"]
         SocketClient["Socket.io Client Singleton"]
         FileReaderModule["FileReader (Base64 Encoder)"]
@@ -138,7 +138,7 @@ sequenceDiagram
 [App Component]
   │
   ├── currentUser (State): { id, username }
-  │     └── Đồng bộ 2 chiều với localStorage ('mercury_chat_user')
+  │     └── Đồng bộ 2 chiều với localStorage ('chat_user')
   │
   ├── [Auth Component] (Khi currentUser === null)
   │     ├── isRegisterMode (Boolean): Chuyển tab Đăng nhập / Đăng ký

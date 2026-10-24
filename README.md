@@ -1,4 +1,4 @@
-# Mercury Messenger - Ứng dụng Chat Realtime Mã hóa Đầu cuối
+# E2EE Chat - Ứng dụng Chat Realtime Mã hóa Đầu cuối
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-v19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
@@ -7,7 +7,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v3.4-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Mercury Messenger** là ứng dụng nhắn tin thời gian thực (Realtime Chat Application) client-server, được xây dựng theo kiến trúc hiện đại, giao diện lấy cảm hứng từ ngôn ngữ thiết kế tối giản, sang trọng **Mercury Dark Mode** (*Ink-violet night, Indigo action pills*). 
+**E2EE Chat** là ứng dụng nhắn tin thời gian thực (Realtime Chat Application) client-server, được xây dựng theo kiến trúc hiện đại, giao diện Dark Mode tối giản, sang trọng (*Ink-violet night, Indigo action pills*). 
 
 Hệ thống hỗ trợ xác thực tài khoản, phân chia phòng chat linh hoạt, lưu trữ và tải lại lịch sử tin nhắn tự động từ tệp tin JSON thông qua Node.js `fs`, cùng khả năng truyền tải hình ảnh và tệp tài liệu trực tiếp dưới dạng chuỗi Base64 qua WebSocket.
 
@@ -15,7 +15,7 @@ Hệ thống hỗ trợ xác thực tài khoản, phân chia phòng chat linh ho
 
 ## 🌟 Tính năng nổi bật
 
-- **Giao diện Mercury Dark Mode**: Thiết kế tối giản, màu nền đêm tím mực (`#171721`), các nút hành động viên thuốc Indigo (`#5266eb`), thẻ tin nhắn nổi (`#1e1e2a`), phông chữ Inter thanh mảnh, hiện đại.
+- **Giao diện Dark Mode tối giản**: Thiết kế hiện đại, màu nền đêm tím mực (`#171721`), các nút hành động viên thuốc Indigo (`#5266eb`), thẻ tin nhắn nổi (`#1e1e2a`), phông chữ Inter thanh mảnh.
 - **Hệ thống Đăng nhập / Đăng ký**: Hỗ trợ tạo tài khoản và đăng nhập với cơ chế lưu trữ bảo đảm qua REST API (`/api/register`, `/api/login`).
 - **Lưu trữ JSON Database (`fs`)**: Dữ liệu người dùng và toàn bộ tin nhắn được ghi nhận bền vững vào file `backend/database.json`.
 - **Nhắn tin thời gian thực (Socket.io)**: Kết nối hai chiều với độ trễ cực thấp giữa các client, tự động nhận biết trạng thái kết nối trực tuyến/mất kết nối.
@@ -33,7 +33,7 @@ Hệ thống hỗ trợ xác thực tài khoản, phân chia phòng chat linh ho
 | :--- | :--- | :--- | :--- |
 | **Frontend Framework** | React | `^19.3.1` | Xây dựng giao diện Single Page Application (SPA) |
 | **Build Tool** | Vite | `^8.3.4` | Hot Module Replacement (HMR), build siêu tốc |
-| **Styling** | Tailwind CSS | `^3.4.17` | Utility-first CSS mô phỏng Mercury Theme tokens |
+| **Styling** | Tailwind CSS | `^3.4.17` | Utility-first CSS thiết kế Dark Mode tối giản |
 | **Icon Set** | Lucide React | `^1.16.0` | Bộ biểu tượng vector tối giản, sắc nét |
 | **Backend Runtime** | Node.js | `>= 18` | Môi trường thực thi JavaScript phía máy chủ |
 | **Web Server** | Express | `^4.21.2` | Xử lý REST API endpoints và Middleware |
@@ -47,7 +47,7 @@ Hệ thống hỗ trợ xác thực tài khoản, phân chia phòng chat linh ho
 
 ```text
 ANM&MM/
-├── DESIGN.md                  # Bản quy chuẩn thiết kế Mercury Design Language
+├── DESIGN.md                  # Bản quy chuẩn thiết kế giao diện (Design Tokens)
 ├── ARCHITECTURE.md            # Tài liệu kiến trúc kỹ thuật sâu & Sơ đồ luồng
 ├── README.md                  # Tài liệu tổng quan & hướng dẫn sử dụng dự án
 ├── package.json               # Script khởi chạy đồng bộ môi trường gốc
@@ -60,7 +60,7 @@ ANM&MM/
 └── frontend/                  # Môi trường Giao diện (Client)
     ├── package.json           # Dependencies: react, socket.io-client, lucide-react, tailwindcss
     ├── vite.config.js         # Cấu hình Vite Dev Server
-    ├── tailwind.config.js     # Thiết lập Theme Mercury (Night, Indigo, Slate, Periwinkle)
+    ├── tailwind.config.js     # Thiết lập Theme Dark Mode (Night, Indigo, Slate, Periwinkle)
     ├── postcss.config.js      # PostCSS configuration
     ├── index.html             # Entry HTML với SEO metadata chuẩn
     └── src/

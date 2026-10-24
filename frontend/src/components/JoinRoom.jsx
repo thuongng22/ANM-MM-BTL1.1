@@ -24,7 +24,7 @@ export default function JoinRoom({ onJoin, defaultUsername = '', defaultRoom = '
 
   return (
     <div className="min-h-screen w-full bg-night flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Ambient background glow (Mercury style) */}
+      {/* Ambient background glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[300px] h-[300px] bg-periwinkle/5 rounded-full blur-[100px] pointer-events-none" />
 
@@ -37,7 +37,7 @@ export default function JoinRoom({ onJoin, defaultUsername = '', defaultRoom = '
           </div>
           <span className="flex items-center gap-1.5 text-xs text-periwinkle bg-white/5 border border-white/10 px-3 py-1 rounded-full">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Mercury UI</span>
+            <span>E2EE Chat</span>
           </span>
         </div>
 
@@ -117,7 +117,7 @@ export default function JoinRoom({ onJoin, defaultUsername = '', defaultRoom = '
             </div>
           </div>
 
-          {/* Submit Action Pill (Mercury Indigo Action Pill) */}
+          {/* Submit Action Pill */}
           <div className="pt-4">
             <button
               type="submit"

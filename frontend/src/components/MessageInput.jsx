@@ -99,7 +99,7 @@ export default function MessageInput({ onSendMessage, disabled }) {
 
   return (
     <div className="bg-night/95 border-t border-white/5 p-4 sm:px-8 backdrop-blur-md shrink-0">
-      {/* Khung xem trước tệp đính kèm (Preview Capsule phong cách Mercury) */}
+      {/* Khung xem trước tệp đính kèm (Preview Capsule) */}
       {selectedAttachment && (
         <div className="mb-3 max-w-4xl mx-auto flex items-center justify-between bg-night-raised border border-white/10 text-on-dark text-xs px-4 py-2.5 rounded-2xl shadow-md animate-fadeIn">
           <div className="flex items-center gap-3 truncate">
@@ -170,7 +170,7 @@ export default function MessageInput({ onSendMessage, disabled }) {
           />
         </div>
 
-        {/* Nút Gửi (Mercury Indigo Action Pill) */}
+        {/* Nút Gửi */}
         <button
           type="submit"
           disabled={isSendDisabled}

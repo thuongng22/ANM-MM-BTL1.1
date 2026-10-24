@@ -98,7 +98,7 @@ export default function Auth({ onLoginSuccess }) {
 
         <div className="text-center mb-8">
           <h2 className="text-2xl sm:text-3xl font-normal text-on-dark tracking-tight">
-            Mercury Messenger
+            E2EE Messenger
           </h2>
           <p className="text-fog text-sm mt-1.5 font-light">
             Nền tảng giao tiếp bảo mật và tức thì

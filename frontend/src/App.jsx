@@ -5,18 +5,18 @@ import Chat from './components/Chat';
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
     // Khôi phục phiên làm việc từ localStorage nếu có
-    const saved = localStorage.getItem('mercury_chat_user');
+    const saved = localStorage.getItem('chat_user');
     return saved ? JSON.parse(saved) : null;
   });
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
-    localStorage.setItem('mercury_chat_user', JSON.stringify(user));
+    localStorage.setItem('chat_user', JSON.stringify(user));
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('mercury_chat_user');
+    localStorage.removeItem('chat_user');
   };
 
   return (
