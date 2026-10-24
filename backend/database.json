@@ -1,0 +1,65 @@
+{
+  "users": [
+    {
+      "id": "usr_1792842864142_h71e",
+      "username": "thuong",
+      "password": "123",
+      "createdAt": "2026-10-24T11:54:24.142Z"
+    },
+    {
+      "id": "usr_1792842893627_vaye",
+      "username": "An",
+      "password": "123",
+      "createdAt": "2026-10-24T11:54:53.627Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg_1792842902755_vm22",
+      "sender": "An",
+      "text": "Hello",
+      "timestamp": "18:55",
+      "room": "general",
+      "isSystem": false
+    },
+    {
+      "id": "msg_1792842924114_dv90",
+      "sender": "thuong",
+      "text": "What ur name",
+      "timestamp": "06:55 PM",
+      "room": "general",
+      "isSystem": false
+    },
+    {
+      "id": "msg_1792842985588_j9k4",
+      "sender": "thuong",
+      "text": "Ok",
+      "timestamp": "06:56 PM",
+      "room": "general",
+      "isSystem": false
+    },
+    {
+      "id": "msg_1792843768013_7rgo",
+      "sender": "thuong",
+      "text": "xem đi mày",
+      "attachment": {
+        "name": "Test.txt",
+        "type": "text/plain",
+        "size": "7 B",
+        "data": "data:text/plain;base64,ZmVmZWZ3Zg=="
+      },
+      "timestamp": "07:09 PM",
+      "room": "general",
+      "isSystem": false
+    },
+    {
+      "id": "msg_1792844962984_jajt",
+      "sender": "An",
+      "text": "Ok bro",
+      "attachment": null,
+      "timestamp": "07:29 PM",
+      "room": "general",
+      "isSystem": false
+    }
+  ]
+}

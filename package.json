@@ -1,0 +1,15 @@
+{
+  "name": "chat-e2ee-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dự án Ứng dụng Chat Client-Server Mã hóa Đầu cuối (Day 1-2: Plaintext Boilerplate)",
+  "scripts": {
+    "dev": "node ./node_modules/concurrently/dist/bin/concurrently.js -n \"BACKEND,FRONTEND\" -c \"magenta,cyan\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
