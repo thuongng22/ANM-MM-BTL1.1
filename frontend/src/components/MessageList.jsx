@@ -1,8 +1,14 @@
-import React, { useEffect, useRef } from 'react';
-import { MessageSquare, FileText, Download } from 'lucide-react';
+import React, { useEffect, useRef, useMemo } from 'react';
+import { MessageSquare, FileText, Download, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { verifyHMAC, deriveKeys } from '../crypto/hmac';
 
-export default function MessageList({ messages, currentUser }) {
+export default function MessageList({ messages, currentUser, roomKey, isKeyReady }) {
   const bottomRef = useRef(null);
+
+  // Dẫn xuất HMAC Key từ Room Key để kiểm tra tính toàn vẹn
+  const hmacKey = useMemo(() => {
+    return deriveKeys(roomKey).hmacKey;
+  }, [roomKey]);
 
   // Tự động cuộn xuống tin nhắn mới nhất
   useEffect(() => {
@@ -11,6 +17,18 @@ export default function MessageList({ messages, currentUser }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-4">
+      {/* Thông báo mã hóa E2EE phòng */}
+      <div className="flex justify-center mb-2">
+        <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/5 text-slate text-[11px] px-3.5 py-1 rounded-full">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span>
+            {isKeyReady
+              ? 'Phòng chat được bảo vệ bởi Khóa Đối Xứng phân phối qua RSA E2EE'
+              : 'Đang thiết lập kênh mã hóa RSA...'}
+          </span>
+        </div>
+      </div>
+
       {messages.length === 0 ? (
         <div className="h-full min-h-[360px] flex flex-col items-center justify-center text-center p-6">
           <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-fog mb-4">
@@ -33,6 +51,14 @@ export default function MessageList({ messages, currentUser }) {
               </div>
             );
           }
+
+          // =========================================================================
+          // 🔗 KHỚP NỐI VỚI MODULE AES (DÀNH CHO LẬP TRÌNH VIÊN TIẾP THEO)
+          // =========================================================================
+          // Khi tin nhắn nhận về đã bị mã hóa AES:
+          // const displayText = msg.text ? decryptAES(msg.text, roomKey) : '';
+          // const displayAttachment = msg.attachment ? decryptAttachmentAES(msg.attachment, roomKey) : null;
+          // =========================================================================
 
           // 2. Tin nhắn người dùng (phân chia Trái / Phải)
           const isMe = msg.sender === currentUser;
@@ -116,14 +142,40 @@ export default function MessageList({ messages, currentUser }) {
                 )}
               </div>
 
-              {/* Thời gian gửi */}
-              <span
-                className={`text-[10px] text-slate mt-1 ${
-                  isMe ? 'mr-1.5' : 'ml-1.5'
+              {/* Thông tin phụ: Thời gian gửi & Trạng thái HMAC */}
+              <div
+                className={`flex items-center gap-2 mt-1 text-[10px] text-slate ${
+                  isMe ? 'mr-1.5 flex-row-reverse' : 'ml-1.5'
                 }`}
               >
-                {msg.timestamp}
-              </span>
+                <span>{msg.timestamp}</span>
+
+                {/* Kiểm tra chữ ký HMAC nếu tin nhắn có kèm chữ ký */}
+                {msg.hmac && (
+                  (() => {
+                    const content = (msg.text || '') + (msg.attachment?.data || '');
+                    const isValid = hmacKey ? verifyHMAC(content, hmacKey, msg.hmac) : false;
+
+                    return isValid ? (
+                      <span
+                        className="inline-flex items-center gap-0.5 text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20"
+                        title="HMAC-SHA256: Dữ liệu nguyên vẹn 100%, không bị sửa đổi"
+                      >
+                        <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                        <span>HMAC OK</span>
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-0.5 text-rose-400 font-medium bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20"
+                        title="Cảnh báo: Chữ ký HMAC không khớp! Dữ liệu có thể đã bị sửa đổi trên đường truyền"
+                      >
+                        <ShieldAlert className="w-3 h-3 text-rose-400" />
+                        <span>HMAC Lỗi</span>
+                      </span>
+                    );
+                  })()
+                )}
+              </div>
             </div>
           );
         })
