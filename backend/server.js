@@ -330,7 +330,26 @@ io.on('connection', (socket) => {
     io.to(room).emit('receive_message', formattedMessage);
   });
 
-  // 5. Xử lý khi ngắt kết nối
+  // 5. Xóa toàn bộ tin nhắn trong phòng chat (Clear room messages)
+  socket.on('clear_room_messages', ({ room }) => {
+    if (!room) return;
+    const session = activeSockets.get(socket.id);
+    const username = session?.username || 'Người dùng';
+
+    const db = readDatabase();
+    db.messages = db.messages.filter((msg) => msg.room !== room);
+    writeDatabase(db);
+
+    console.log(`[Chat] "${username}" đã xóa toàn bộ lịch sử tin nhắn trong phòng "${room}".`);
+
+    // Phát thông báo xóa tin nhắn tới toàn bộ thành viên trong phòng
+    io.to(room).emit('room_messages_cleared', {
+      room,
+      clearedBy: username
+    });
+  });
+
+  // 6. Xử lý khi ngắt kết nối
   socket.on('disconnect', () => {
     const session = activeSockets.get(socket.id);
     if (session) {

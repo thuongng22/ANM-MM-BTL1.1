@@ -246,6 +246,17 @@ export default function Chat({ user, onLogout }) {
       }
     };
 
+    // Sự kiện 5: Xóa toàn bộ tin nhắn trong phòng (Clear room messages)
+    const handleRoomMessagesCleared = ({ room: targetRoom, clearedBy }) => {
+      if (targetRoom === room) {
+        setMessages([]);
+        addHandshakeLog(
+          'info',
+          `Lịch sử tin nhắn phòng "${targetRoom}" đã được dọn sạch bởi "${clearedBy || 'thành viên'}".`
+        );
+      }
+    };
+
     // Đăng ký các listeners
     socket.on('room_history', handleRoomHistory);
     socket.on('receive_message', handleReceiveMessage);
@@ -254,6 +265,7 @@ export default function Chat({ user, onLogout }) {
     socket.on('req_room_key_distribution', handleReqRoomKeyDistribution);
     socket.on('handshake_pending', handleHandshakePending);
     socket.on('receive_encrypted_room_key', handleReceiveEncryptedRoomKey);
+    socket.on('room_messages_cleared', handleRoomMessagesCleared);
 
     return () => {
       socket.off('connect', handleConnect);
@@ -265,6 +277,7 @@ export default function Chat({ user, onLogout }) {
       socket.off('req_room_key_distribution', handleReqRoomKeyDistribution);
       socket.off('handshake_pending', handleHandshakePending);
       socket.off('receive_encrypted_room_key', handleReceiveEncryptedRoomKey);
+      socket.off('room_messages_cleared', handleRoomMessagesCleared);
     };
   }, [user.username, room]);
 
@@ -303,6 +316,15 @@ export default function Chat({ user, onLogout }) {
     }
   };
 
+  const handleClearRoomMessages = () => {
+    const isConfirmed = window.confirm(
+      `Bạn có chắc chắn muốn xóa toàn bộ tin nhắn trong phòng #${room} không?\n\nThao tác này sẽ xóa sạch dữ liệu tin nhắn của phòng trên Server và cập nhật cho tất cả mọi người.`
+    );
+    if (isConfirmed) {
+      socket.emit('clear_room_messages', { room });
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen w-full bg-night select-none">
       <Header
@@ -315,6 +337,7 @@ export default function Chat({ user, onLogout }) {
         roomKey={activeRoomKey}
         onOpenKeyModal={() => setIsKeyModalOpen(true)}
         onOpenDiagramModal={() => setIsDiagramModalOpen(true)}
+        onClearChat={handleClearRoomMessages}
         roomUsersCount={roomUsers.length}
       />
 

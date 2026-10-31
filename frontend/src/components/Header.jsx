@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, LogOut, Hash, Key, Lock, Users, Layers } from 'lucide-react';
+import { Shield, LogOut, Hash, Key, Lock, Users, Layers, Trash2 } from 'lucide-react';
 
 export default function Header({
   username,
@@ -11,6 +11,7 @@ export default function Header({
   roomKey,
   onOpenKeyModal,
   onOpenDiagramModal,
+  onClearChat,
   roomUsersCount = 0
 }) {
   const availableRooms = ['general', 'crypto-lab', 'announcements'];
@@ -105,6 +106,19 @@ export default function Header({
             </button>
           ))}
         </div>
+
+        {/* Clear Chat Room Button */}
+        {onClearChat && (
+          <button
+            type="button"
+            onClick={onClearChat}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 transition-all active:scale-95 shadow-sm"
+            title={`Xóa toàn bộ tin nhắn trong phòng #${room}`}
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <span className="hidden sm:inline font-medium">Xóa chat</span>
+          </button>
+        )}
 
         {/* Current User Pill */}
         <div className="flex items-center gap-2 bg-white/5 border border-white/10 pl-3 pr-2.5 py-1.5 rounded-full text-xs text-on-dark">
