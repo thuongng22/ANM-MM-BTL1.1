@@ -154,18 +154,47 @@ const io = new Server(server, {
 
 const activeSockets = new Map();
 
+// Helper lấy danh sách thành viên đang hoạt động trong phòng
+function getRoomMembers(room) {
+  const members = [];
+  for (const [id, s] of activeSockets.entries()) {
+    if (s.room === room) {
+      members.push({
+        socketId: s.socketId,
+        username: s.username,
+        publicKey: s.publicKey || null,
+        joinedAt: s.joinedAt
+      });
+    }
+  }
+  // Sắp xếp theo thứ tự tham gia (người vào trước đứng đầu để làm distributor)
+  return members.sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
 io.on('connection', (socket) => {
-  // 1. Tham gia phòng và trả về lịch sử tin nhắn đã lưu (bao gồm file)
-  socket.on('join_room', ({ username, room }) => {
+  // 1. Tham gia phòng và xử lý Bắt tay trao đổi khóa RSA (RSA Handshake)
+  socket.on('join_room', ({ username, room, publicKey }) => {
     if (!username || !room) return;
 
     const prevSession = activeSockets.get(socket.id);
-    if (prevSession?.room) {
-      socket.leave(prevSession.room);
+    const prevRoom = prevSession?.room;
+    if (prevRoom && prevRoom !== room) {
+      socket.leave(prevRoom);
+      // Cập nhật danh sách thành viên cho phòng cũ
+      io.to(prevRoom).emit('room_users', getRoomMembers(prevRoom).filter(m => m.socketId !== socket.id));
     }
 
     socket.join(room);
-    activeSockets.set(socket.id, { username, room });
+
+    // Lưu phiên hoạt động kèm RSA Public Key
+    const sessionData = {
+      socketId: socket.id,
+      username,
+      room,
+      publicKey: publicKey || null,
+      joinedAt: Date.now()
+    };
+    activeSockets.set(socket.id, sessionData);
 
     // Đọc lịch sử tin nhắn của phòng từ database.json
     const db = readDatabase();
@@ -173,6 +202,12 @@ io.on('connection', (socket) => {
 
     // Gửi toàn bộ lịch sử tin nhắn kèm attachment cho socket vừa vào
     socket.emit('room_history', roomMessages);
+
+    // Lấy danh sách thành viên đã có mặt trước đó trong phòng
+    const existingMembers = getRoomMembers(room).filter(m => m.socketId !== socket.id);
+
+    // Phát danh sách toàn bộ thành viên phòng hiện tại cho mọi người trong phòng
+    io.to(room).emit('room_users', getRoomMembers(room));
 
     // Thông báo cho các thành viên khác
     socket.to(room).emit('receive_message', {
@@ -183,9 +218,76 @@ io.on('connection', (socket) => {
       isSystem: true,
       room
     });
+
+    // --- LUỒNG BẮT TAY TRAO ĐỔI KHÓA RSA (RSA HANDSHAKE PROTOCOL) ---
+    if (existingMembers.length === 0) {
+      // Trường hợp A: Phòng chưa có ai => User này là NGƯỜI ĐẦU TIÊN (Key Initiator)
+      console.log(`[Handshake] "${username}" là người đầu tiên trong phòng "${room}". Yêu cầu khởi tạo khóa phòng.`);
+      socket.emit('init_room_key_holder', {
+        room,
+        isInitiator: true,
+        message: 'Bạn là thành viên đầu tiên. Khóa phòng sẽ được khởi tạo tự động.'
+      });
+    } else {
+      // Trường hợp B: Phòng ĐÃ CÓ người cũ => Người cũ gửi khóa cho người mới
+      // Chọn người có mặt lâu nhất trong phòng làm distributor
+      const distributor = existingMembers[0];
+      console.log(`[Handshake] "${username}" tham gia phòng "${room}". Yêu cầu người cũ "${distributor.username}" phân phối khóa phòng.`);
+
+      // Gửi yêu cầu phân phối khóa tới người cũ
+      io.to(distributor.socketId).emit('req_room_key_distribution', {
+        requesterSocketId: socket.id,
+        requesterUsername: username,
+        requesterPublicKey: publicKey,
+        room
+      });
+
+      // Báo cho người mới biết đang chờ nhận khóa
+      socket.emit('handshake_pending', {
+        room,
+        distributorUsername: distributor.username,
+        message: `Đang chờ người cũ (${distributor.username}) gửi khóa phòng đã mã hóa RSA...`
+      });
+    }
   });
 
-  // 2. Nhận tin nhắn mới (văn bản và/hoặc tệp đính kèm Base64), lưu vào database.json và phát tới các thành viên
+  // 2. Chuyển tiếp Khóa phòng đã được mã hóa RSA từ Người cũ sang Người mới (E2EE Relay)
+  socket.on('send_encrypted_room_key', ({ targetSocketId, encryptedKey, room, sender }) => {
+    if (!targetSocketId || !encryptedKey) return;
+
+    console.log(`[Handshake] Chuyển tiếp khóa phòng mã hóa từ "${sender}" tới target "${targetSocketId}" trong phòng "${room}".`);
+
+    // Server chỉ chuyển tiếp Ciphertext, hoàn toàn KHÔNG THỂ giải mã nội dung vì không có Private Key
+    io.to(targetSocketId).emit('receive_encrypted_room_key', {
+      encryptedKey,
+      room,
+      sender: sender || activeSockets.get(socket.id)?.username || 'Thành viên cũ'
+    });
+  });
+
+  // 3. User yêu cầu cấp lại khóa phòng khi cần thiết
+  socket.on('request_room_key_refresh', ({ room }) => {
+    const session = activeSockets.get(socket.id);
+    if (!session) return;
+    const existingMembers = getRoomMembers(room).filter(m => m.socketId !== socket.id);
+    if (existingMembers.length > 0) {
+      const distributor = existingMembers[0];
+      io.to(distributor.socketId).emit('req_room_key_distribution', {
+        requesterSocketId: socket.id,
+        requesterUsername: session.username,
+        requesterPublicKey: session.publicKey,
+        room
+      });
+    } else {
+      socket.emit('init_room_key_holder', {
+        room,
+        isInitiator: true,
+        message: 'Không có thành viên khác. Tự tạo khóa phòng mới.'
+      });
+    }
+  });
+
+  // 4. Nhận tin nhắn mới (văn bản và/hoặc tệp đính kèm Base64), lưu vào database.json và phát tới các thành viên
   socket.on('send_message', (messageData) => {
     const { room, sender, text, attachment } = messageData;
     const hasText = Boolean(text && text.trim().length > 0);
@@ -199,6 +301,8 @@ io.on('connection', (socket) => {
       id: messageData.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       sender: sender || 'Ẩn danh',
       text: hasText ? text.trim() : '',
+      // Chữ ký xác thực toàn vẹn HMAC-SHA256 (nếu có)
+      hmac: messageData.hmac || null,
       // Tệp đính kèm Base64 (nếu có)
       attachment: hasAttachment
         ? {
@@ -222,11 +326,13 @@ io.on('connection', (socket) => {
     io.to(room).emit('receive_message', formattedMessage);
   });
 
-  // 3. Xử lý khi ngắt kết nối
+  // 5. Xử lý khi ngắt kết nối
   socket.on('disconnect', () => {
     const session = activeSockets.get(socket.id);
     if (session) {
       const { username, room } = session;
+      activeSockets.delete(socket.id);
+
       socket.to(room).emit('receive_message', {
         id: `sys_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         sender: 'Hệ thống',
@@ -235,7 +341,10 @@ io.on('connection', (socket) => {
         isSystem: true,
         room
       });
-      activeSockets.delete(socket.id);
+
+      // Cập nhật lại danh sách thành viên còn lại trong phòng
+      io.to(room).emit('room_users', getRoomMembers(room));
+      console.log(`[Socket] "${username}" đã rời phòng "${room}". Còn lại: ${getRoomMembers(room).length} thành viên.`);
     }
   });
 });

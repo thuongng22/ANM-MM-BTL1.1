@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Send, Paperclip, X, FileText, Image as ImageIcon } from 'lucide-react';
+import { Send, Paperclip, X, FileText, Image as ImageIcon, Lock, ShieldCheck } from 'lucide-react';
 
-export default function MessageInput({ onSendMessage, disabled }) {
+export default function MessageInput({ onSendMessage, disabled, roomKey, keyReady = true }) {
   const [inputText, setInputText] = useState('');
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const fileInputRef = useRef(null);
@@ -73,7 +73,22 @@ export default function MessageInput({ onSendMessage, disabled }) {
 
     if ((!hasText && !hasFile) || disabled) return;
 
-    // Đóng gói và phát lên component cha (Chat)
+    // =========================================================================
+    // 🔗 KHỚP NỐI VỚI MODULE AES (DÀNH CHO LẬP TRÌNH VIÊN TIẾP THEO)
+    // =========================================================================
+    // Biến `roomKey` đại diện cho khóa đối xứng được phân phối ngầm qua RSA.
+    // Khi ráp nối module AES:
+    // const encryptedText = hasText ? encryptAES(inputText.trim(), roomKey) : '';
+    // const encryptedAttachment = hasFile
+    //   ? {
+    //       ...selectedAttachment,
+    //       data: encryptAES(selectedAttachment.data, roomKey)
+    //     }
+    //   : null;
+    // onSendMessage({ text: encryptedText, attachment: encryptedAttachment });
+    // =========================================================================
+
+    // Hiện tại gửi payload (sẽ mã hóa AES ở bước trên):
     onSendMessage({
       text: inputText.trim(),
       attachment: selectedAttachment,
@@ -164,7 +179,13 @@ export default function MessageInput({ onSendMessage, disabled }) {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={selectedAttachment ? 'Thêm chú thích cho tệp...' : 'Nhập tin nhắn...'}
+            placeholder={
+              !keyReady
+                ? 'Đang đồng bộ khóa phòng RSA...'
+                : selectedAttachment
+                ? 'Thêm chú thích cho tệp...'
+                : 'Nhập tin nhắn (E2EE Protected)...'
+            }
             disabled={disabled}
             className="w-full h-11 bg-night-raised border border-white/10 focus:border-primary text-on-dark placeholder-slate text-sm px-5 rounded-full outline-none transition-all shadow-inner"
           />
