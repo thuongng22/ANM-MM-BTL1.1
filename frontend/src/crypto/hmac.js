@@ -56,3 +56,4 @@ export function deriveKeys(masterRoomKey) {
   const hmacKey = CryptoJS.SHA256(`${masterRoomKey}_HMAC_KEY_V1`).toString(CryptoJS.enc.Hex);
   return { encKey, hmacKey };
 }
+

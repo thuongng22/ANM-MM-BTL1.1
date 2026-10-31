@@ -86,11 +86,10 @@ export default function KeyDetailsModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Status Capsule */}
           <div
-            className={`p-4 rounded-xl border flex items-center justify-between ${
-              isKeyReady
+            className={`p-4 rounded-xl border flex items-center justify-between ${isKeyReady
                 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
                 : 'bg-amber-950/20 border-amber-500/30 text-amber-200'
-            }`}
+              }`}
           >
             <div className="flex items-center gap-3">
               {isKeyReady ? (
@@ -336,15 +335,14 @@ export default function KeyDetailsModal({
                   <div key={index} className="flex items-start gap-2 text-fog leading-relaxed">
                     <span className="text-slate text-[10px] shrink-0 mt-0.5">[{log.time}]</span>
                     <span
-                      className={`shrink-0 text-[10px] px-1.5 py-0.2 rounded font-semibold ${
-                        log.type === 'init'
+                      className={`shrink-0 text-[10px] px-1.5 py-0.2 rounded font-semibold ${log.type === 'init'
                           ? 'bg-blue-500/20 text-blue-300'
                           : log.type === 'send'
-                          ? 'bg-amber-500/20 text-amber-300'
-                          : log.type === 'receive'
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-white/10 text-fog'
-                      }`}
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : log.type === 'receive'
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-white/10 text-fog'
+                        }`}
                     >
                       {log.type.toUpperCase()}
                     </span>

@@ -96,3 +96,4 @@ sequenceDiagram
    * Mọi tin nhắn gửi đi đều được tính chữ ký HMAC-SHA256. Nếu kẻ tấn công MITM hoặc Server tự ý sửa 1 ký tự trong văn bản hoặc file, phía người nhận sẽ phát hiện ngay lập tức và gắn cờ `HMAC Lỗi`.
 3. **Sẵn sàng tích hợp AES của thành viên khác:**
    * Module `feature/aes-encryption` của đồng đội (Duy) chỉ cần nhận `roomKey` từ `Chat.jsx` để thực hiện `encryptText` và `decryptText`. Toàn bộ luồng phân phối khóa và xác thực chữ ký đã hoàn tất 100%.
+
