@@ -277,12 +277,8 @@ export default function Chat({ user, onLogout }) {
   // 2. Khi nhận tin nhắn `receive_message`, giải mã bằng `activeRoomKey`.
   // =========================================================================
 
-  const handleSendMessage = ({ text, attachment }) => {
-    // [VỊ TRÍ RÁP NỐI AES]:
-    // const encryptedText = encryptAES(text, activeRoomKey);
-    // const encryptedAttachment = encryptAttachmentAES(attachment, activeRoomKey);
-
-    // Dẫn xuất HMAC Key từ khóa phòng và sinh chữ ký toàn vẹn HMAC-SHA256
+  const handleSendMessage = ({ text, iv, attachment, isEncrypted }) => {
+    // Dẫn xuất HMAC Key từ khóa phòng và sinh chữ ký toàn vẹn HMAC-SHA256 trên Ciphertext
     const { hmacKey } = deriveKeys(activeRoomKey);
     const contentToSign = (text || '') + (attachment?.data || '');
     const hmac = hmacKey && contentToSign ? generateHMAC(contentToSign, hmacKey) : null;
@@ -291,7 +287,9 @@ export default function Chat({ user, onLogout }) {
       room,
       sender: user.username,
       text: text || '',
+      iv: iv || null, // Vector khởi tạo AES-GCM
       attachment: attachment || null,
+      isEncrypted: Boolean(isEncrypted),
       hmac, // Chữ ký HMAC-SHA256 đảm bảo tính toàn vẹn thông điệp
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };

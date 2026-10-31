@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Send, Paperclip, X, FileText, Image as ImageIcon, Lock, ShieldCheck } from 'lucide-react';
+import { encryptText } from '../services/aes_service.js';
 
 export default function MessageInput({ onSendMessage, disabled, roomKey, keyReady = true }) {
   const [inputText, setInputText] = useState('');
@@ -66,7 +67,7 @@ export default function MessageInput({ onSendMessage, disabled, roomKey, keyRead
   };
 
   // Xử lý gửi tin nhắn (văn bản + tệp đính kèm)
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e?.preventDefault();
     const hasText = inputText.trim().length > 0;
     const hasFile = Boolean(selectedAttachment);
@@ -74,24 +75,45 @@ export default function MessageInput({ onSendMessage, disabled, roomKey, keyRead
     if ((!hasText && !hasFile) || disabled) return;
 
     // =========================================================================
-    // 🔗 KHỚP NỐI VỚI MODULE AES (DÀNH CHO LẬP TRÌNH VIÊN TIẾP THEO)
+    // 🔗 KHỚP NỐI LOGIC MÃ HÓA AES-256-GCM BẰNG BIẾN ROOMKEY (KHÓA VÀNG TỪ RSA)
     // =========================================================================
-    // Biến `roomKey` đại diện cho khóa đối xứng được phân phối ngầm qua RSA.
-    // Khi ráp nối module AES:
-    // const encryptedText = hasText ? encryptAES(inputText.trim(), roomKey) : '';
-    // const encryptedAttachment = hasFile
-    //   ? {
-    //       ...selectedAttachment,
-    //       data: encryptAES(selectedAttachment.data, roomKey)
-    //     }
-    //   : null;
-    // onSendMessage({ text: encryptedText, attachment: encryptedAttachment });
-    // =========================================================================
+    let messageText = inputText.trim();
+    let messageIV = null;
+    let encryptedAttachment = selectedAttachment;
+    let isEncrypted = false;
 
-    // Hiện tại gửi payload (sẽ mã hóa AES ở bước trên):
+    // Thay thế Mock Key: Sử dụng roomKey (Khóa Vàng) được phân phối ngầm qua RSA
+    if (roomKey) {
+      try {
+        // 1. Mã hóa văn bản thành Ciphertext bằng AES-256-GCM
+        if (hasText) {
+          const encResult = await encryptText(messageText, roomKey);
+          messageText = encResult.ciphertext;
+          messageIV = encResult.iv;
+          isEncrypted = true;
+        }
+
+        // 2. Mã hóa tệp đính kèm Base64 bằng AES-256-GCM
+        if (hasFile && selectedAttachment?.data) {
+          const encFileResult = await encryptText(selectedAttachment.data, roomKey);
+          encryptedAttachment = {
+            ...selectedAttachment,
+            data: encFileResult.ciphertext,
+            iv: encFileResult.iv,
+            isEncrypted: true
+          };
+          isEncrypted = true;
+        }
+      } catch (err) {
+        console.error('[AES-GCM] Lỗi khi mã hóa với roomKey:', err);
+      }
+    }
+
     onSendMessage({
-      text: inputText.trim(),
-      attachment: selectedAttachment,
+      text: messageText,
+      iv: messageIV,
+      attachment: encryptedAttachment,
+      isEncrypted
     });
 
     // Tự động clear state của văn bản và file để reset UI

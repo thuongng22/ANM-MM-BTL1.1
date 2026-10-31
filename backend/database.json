@@ -123,6 +123,18 @@
       "timestamp": "20:23",
       "room": "general",
       "isSystem": false
+    },
+    {
+      "id": "msg_1793461673126_j2b9",
+      "sender": "Alice",
+      "text": "AsX8QpDakgQ13iPurAMIYS/odSRW90hg/cd3DyRnW5hiwhz+261isaWxhsxPuGRge6mQTyL/1Q2+1Mc+UbscUOtBbv2fphOQ3/I9b7dfcFDr3bVHM6ADyEUh",
+      "iv": "ckTcOaSjs5B2cEQp",
+      "isEncrypted": true,
+      "hmac": "5ea70d3f915862ae4967100626fd62c3ddcdbdc8e045d4b0e79976876e729bde",
+      "attachment": null,
+      "timestamp": "10:47 PM",
+      "room": "crypto-lab",
+      "isSystem": false
     }
   ]
 }

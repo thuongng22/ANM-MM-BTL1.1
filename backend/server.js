@@ -301,6 +301,8 @@ io.on('connection', (socket) => {
       id: messageData.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       sender: sender || 'Ẩn danh',
       text: hasText ? text.trim() : '',
+      iv: messageData.iv || null,
+      isEncrypted: Boolean(messageData.isEncrypted),
       // Chữ ký xác thực toàn vẹn HMAC-SHA256 (nếu có)
       hmac: messageData.hmac || null,
       // Tệp đính kèm Base64 (nếu có)
@@ -309,7 +311,9 @@ io.on('connection', (socket) => {
             name: attachment.name,
             type: attachment.type,
             size: attachment.size,
-            data: attachment.data // Chuỗi Base64 Data URL
+            data: attachment.data,
+            iv: attachment.iv || null,
+            isEncrypted: Boolean(attachment.isEncrypted)
           }
         : null,
       timestamp: messageData.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

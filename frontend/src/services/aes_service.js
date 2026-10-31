@@ -1,4 +1,3 @@
-
 function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     const chunkSize = 8192;
@@ -23,6 +22,27 @@ function base64ToArrayBuffer(base64) {
     return bytes.buffer;
 }
 
+/**
+ * Chuyển đổi tham số key thành CryptoKey:
+ * - Nếu key đã là CryptoKey (từ generateAESKey) -> Dùng trực tiếp
+ * - Nếu key là chuỗi (roomKey/activeRoomKey sinh ra từ RSA Handshake) -> Dùng SHA-256 băm thành 256-bit và importKey
+ */
+export async function getCryptoKey(key) {
+    if (key && typeof key === 'object' && key.algorithm) {
+        return key;
+    }
+    const keyString = String(key || 'default_room_key_aes_256');
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(keyString));
+    return await crypto.subtle.importKey(
+        'raw',
+        hashBuffer,
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
 // Tao khoa AES-256-GCM
 export async function generateAESKey() {
     const key = await crypto.subtle.generateKey(
@@ -37,8 +57,9 @@ export async function generateAESKey() {
     return key;
 }
 
-// Ma hoa tin nhan bang AES-GCM
+// Ma hoa tin nhan bang AES-GCM (hỗ trợ cả CryptoKey lẫn chuỗi roomKey)
 export async function encryptText(plaintext, key) {
+    const cryptoKey = await getCryptoKey(key);
 
     // Buoc 1: Chuyen van ban thanh bytes
     const encoder = new TextEncoder();
@@ -55,45 +76,54 @@ export async function encryptText(plaintext, key) {
             name: "AES-GCM",
             iv: iv
         },
-        key,
+        cryptoKey,
         data
     );
 
     // Buoc 4: Chuyen ciphertext sang Base64
     const ciphertext = arrayBufferToBase64(encrypted);
-const ivBase64 = arrayBufferToBase64(iv);
+    const ivBase64 = arrayBufferToBase64(iv);
 
-    // Buoc 6: Tra ve ket qua
+    // Buoc 5: Tra ve ket qua
     return {
         ciphertext: ciphertext,
         iv: ivBase64
     };
 }
+
+// Giai ma tin nhan bang AES-GCM (hỗ trợ cả CryptoKey lẫn chuỗi roomKey)
 export async function decryptText(ciphertext, ivBase64, key) {
-    const encryptedBytes = Uint8Array.from(
-        atob(ciphertext),
-        c => c.charCodeAt(0)
-    );
+    try {
+        const cryptoKey = await getCryptoKey(key);
 
-    const iv = Uint8Array.from(
-        atob(ivBase64),
-        c => c.charCodeAt(0)
-    );
-    const decrypted = await crypto.subtle.decrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        key,
-        encryptedBytes
-    );
-    const decoder = new TextDecoder();
-    const plaintext = decoder.decode(decrypted);
+        const encryptedBytes = Uint8Array.from(
+            atob(ciphertext),
+            c => c.charCodeAt(0)
+        );
 
-    return plaintext;
+        const iv = Uint8Array.from(
+            atob(ivBase64),
+            c => c.charCodeAt(0)
+        );
+        const decrypted = await crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+            cryptoKey,
+            encryptedBytes
+        );
+        const decoder = new TextDecoder();
+        return decoder.decode(decrypted);
+    } catch (err) {
+        console.warn('[AES] Giải mã không thành công (có thể là tin nhắn plaintext cũ hoặc khóa khác):', err.message);
+        return null;
+    }
 }
 
 export async function encryptFile(file, key) {
+    const cryptoKey = await getCryptoKey(key);
+
     // 1. Doc file thanh ArrayBuffer
     const fileData = await file.arrayBuffer();
 
@@ -108,7 +138,7 @@ export async function encryptFile(file, key) {
             name: "AES-GCM",
             iv: iv
         },
-        key,
+        cryptoKey,
         fileData
     );
 
@@ -127,6 +157,8 @@ export async function encryptFile(file, key) {
 }
 
 export async function decryptFile(encryptedFile, key) {
+    const cryptoKey = await getCryptoKey(key);
+
     // 1. Lay du lieu tu Object
     const ciphertext = encryptedFile.ciphertext;
     const ivBase64 = encryptedFile.iv;
@@ -141,7 +173,7 @@ export async function decryptFile(encryptedFile, key) {
             name: "AES-GCM",
             iv: iv
         },
-        key,
+        cryptoKey,
         encryptedBytes
     );
 

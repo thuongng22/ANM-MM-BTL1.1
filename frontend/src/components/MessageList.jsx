@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useMemo } from 'react';
-import { MessageSquare, FileText, Download, ShieldCheck, ShieldAlert } from 'lucide-react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import { MessageSquare, FileText, Download, ShieldCheck, ShieldAlert, Lock } from 'lucide-react';
 import { verifyHMAC, deriveKeys } from '../crypto/hmac';
+import { decryptText } from '../services/aes_service.js';
 
 export default function MessageList({ messages, currentUser, roomKey, isKeyReady }) {
   const bottomRef = useRef(null);
@@ -9,6 +10,62 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
   const hmacKey = useMemo(() => {
     return deriveKeys(roomKey).hmacKey;
   }, [roomKey]);
+
+  // Bộ nhớ đệm lưu trữ kết quả giải mã AES: { [msgId]: { text, attachmentData, isDecrypted } }
+  const [decryptedCache, setDecryptedCache] = useState({});
+
+  // Tự động giải mã tin nhắn mới bằng roomKey (Khóa Vàng từ RSA Handshake)
+  useEffect(() => {
+    let active = true;
+
+    async function processDecryption() {
+      if (!roomKey) return;
+
+      for (const msg of messages) {
+        if (msg.isSystem || decryptedCache[msg.id]) continue;
+
+        let plainText = msg.text;
+        let plainAttachmentData = msg.attachment?.data;
+        let isDecrypted = false;
+
+        // 1. Giải mã văn bản nếu có IV hoặc cờ isEncrypted
+        if (msg.text && (msg.iv || msg.isEncrypted)) {
+          const dec = await decryptText(msg.text, msg.iv, roomKey);
+          if (dec !== null) {
+            plainText = dec;
+            isDecrypted = true;
+          }
+        }
+
+        // 2. Giải mã tệp đính kèm Base64 nếu có mã hóa
+        const attachmentIV = msg.attachment?.iv || msg.iv;
+        if (msg.attachment?.data && (attachmentIV || msg.attachment?.isEncrypted)) {
+          const decFile = await decryptText(msg.attachment.data, attachmentIV, roomKey);
+          if (decFile !== null) {
+            plainAttachmentData = decFile;
+            isDecrypted = true;
+          }
+        }
+
+        if (active) {
+          setDecryptedCache((prev) => ({
+            ...prev,
+            [msg.id]: {
+              text: plainText,
+              attachmentData: plainAttachmentData,
+              isDecrypted
+            }
+          }));
+        }
+      }
+    }
+
+    processDecryption();
+
+    return () => {
+      active = false;
+    };
+  }, [messages, roomKey]);
 
   // Tự động cuộn xuống tin nhắn mới nhất
   useEffect(() => {
@@ -52,13 +109,11 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
             );
           }
 
-          // =========================================================================
-          // 🔗 KHỚP NỐI VỚI MODULE AES (DÀNH CHO LẬP TRÌNH VIÊN TIẾP THEO)
-          // =========================================================================
-          // Khi tin nhắn nhận về đã bị mã hóa AES:
-          // const displayText = msg.text ? decryptAES(msg.text, roomKey) : '';
-          // const displayAttachment = msg.attachment ? decryptAttachmentAES(msg.attachment, roomKey) : null;
-          // =========================================================================
+          // Lấy dữ liệu đã giải mã AES từ cache (nếu có), fallback về bản gốc
+          const cached = decryptedCache[msg.id];
+          const displayText = cached?.text ?? msg.text;
+          const displayAttachmentData = cached?.attachmentData ?? msg.attachment?.data;
+          const isAES = cached?.isDecrypted || Boolean(msg.iv);
 
           // 2. Tin nhắn người dùng (phân chia Trái / Phải)
           const isMe = msg.sender === currentUser;
@@ -83,23 +138,23 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
                     : 'bg-night-raised border border-white/10 text-on-dark rounded-[20px] rounded-bl-sm shadow-sm'
                 }`}
               >
-                {/* 1. Hiển thị nội dung văn bản (nếu có) */}
-                {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
+                {/* 1. Hiển thị nội dung văn bản (đã giải mã AES) */}
+                {displayText && <p className="whitespace-pre-wrap">{displayText}</p>}
 
-                {/* 2. Hiển thị tệp đính kèm (nếu có) */}
+                {/* 2. Hiển thị tệp đính kèm (đã giải mã AES) */}
                 {msg.attachment && (
-                  <div className={`${msg.text ? 'mt-2.5' : ''}`}>
+                  <div className={`${displayText ? 'mt-2.5' : ''}`}>
                     {msg.attachment.type?.startsWith('image/') ? (
                       /* Trường hợp tệp là HÌNH ẢNH: Render thẻ <img> xem trực tiếp */
                       <div className="rounded-xl overflow-hidden border border-white/10 max-w-sm group/media">
                         <a
-                          href={msg.attachment.data}
+                          href={displayAttachmentData}
                           download={msg.attachment.name}
                           title="Bấm để tải về hình ảnh"
                           className="block relative overflow-hidden"
                         >
                           <img
-                            src={msg.attachment.data}
+                            src={displayAttachmentData}
                             alt={msg.attachment.name}
                             className="w-full max-h-72 object-cover rounded-xl hover:scale-[1.02] transition-transform duration-200"
                             loading="lazy"
@@ -117,7 +172,7 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
                     ) : (
                       /* Trường hợp tệp KHÁC (PDF, DOCX, TXT...): Render Card kèm nút tải về */
                       <a
-                        href={msg.attachment.data}
+                        href={displayAttachmentData}
                         download={msg.attachment.name}
                         className={`flex items-center gap-3 p-3 rounded-xl border transition-all group/file ${
                           isMe
@@ -142,13 +197,24 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
                 )}
               </div>
 
-              {/* Thông tin phụ: Thời gian gửi & Trạng thái HMAC */}
+              {/* Thông tin phụ: Thời gian gửi & Huy hiệu AES/HMAC */}
               <div
                 className={`flex items-center gap-2 mt-1 text-[10px] text-slate ${
                   isMe ? 'mr-1.5 flex-row-reverse' : 'ml-1.5'
                 }`}
               >
                 <span>{msg.timestamp}</span>
+
+                {/* Huy hiệu AES-GCM (nếu tin nhắn được mã hóa) */}
+                {isAES && (
+                  <span
+                    className="inline-flex items-center gap-0.5 text-amber-300 font-medium bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20"
+                    title="Tin nhắn được mã hóa đầu cuối bằng chuẩn AES-256-GCM"
+                  >
+                    <Lock className="w-3 h-3 text-amber-400" />
+                    <span>AES-256</span>
+                  </span>
+                )}
 
                 {/* Kiểm tra chữ ký HMAC nếu tin nhắn có kèm chữ ký */}
                 {msg.hmac && (
