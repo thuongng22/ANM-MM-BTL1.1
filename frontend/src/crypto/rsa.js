@@ -1,23 +1,33 @@
 import JSEncrypt from 'jsencrypt';
 
 /**
- * Lấy hoặc sinh mới cặp khóa RSA (1024-bit) cho người dùng trong phiên làm việc (session).
+ * Lấy hoặc sinh mới cặp khóa RSA (1024-bit) cho người dùng.
  * 1024-bit đảm bảo tốc độ sinh khóa tức thì (~50-100ms) trên trình duyệt không gây giật lag.
- * Lưu tạm trong sessionStorage theo username để tránh mất khóa khi user F5 lại trang.
+ * Lưu trữ bền vững trong localStorage theo username để không bị mất danh tính mã hóa khi F5 (Reload).
  */
 export function getOrGenerateRSAKeyPair(username = 'anonymous') {
   const storageKey = `e2ee_rsa_keys_${username}`;
   try {
-    const saved = sessionStorage.getItem(storageKey);
+    // 1. Ưu tiên đọc từ localStorage
+    let saved = localStorage.getItem(storageKey);
+
+    // Hỗ trợ chuyển đổi từ sessionStorage cũ nếu có
+    if (!saved && typeof sessionStorage !== 'undefined') {
+      saved = sessionStorage.getItem(storageKey);
+      if (saved) {
+        localStorage.setItem(storageKey, saved);
+      }
+    }
+
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.publicKey && parsed.privateKey) {
-        console.log(`[RSA] Sử dụng lại cặp khóa RSA hiện có cho user "${username}"`);
+        console.log(`[RSA] Sử dụng lại cặp khóa RSA lưu trong localStorage cho user "${username}"`);
         return parsed;
       }
     }
   } catch (e) {
-    console.warn('[RSA] Không thể đọc RSA key từ sessionStorage:', e);
+    console.warn('[RSA] Không thể đọc RSA key từ localStorage:', e);
   }
 
   console.log(`[RSA] Đang sinh cặp khóa RSA 1024-bit mới cho user "${username}"...`);
@@ -29,12 +39,80 @@ export function getOrGenerateRSAKeyPair(username = 'anonymous') {
   const keyPair = { publicKey, privateKey, createdAt: Date.now() };
 
   try {
-    sessionStorage.setItem(storageKey, JSON.stringify(keyPair));
+    localStorage.setItem(storageKey, JSON.stringify(keyPair));
   } catch (e) {
-    console.warn('[RSA] Không thể lưu RSA key vào sessionStorage:', e);
+    console.warn('[RSA] Không thể lưu RSA key vào localStorage:', e);
   }
 
   return keyPair;
+}
+
+/**
+ * Đọc Khóa phòng (Room AES Key) đã lưu trong localStorage của trình duyệt.
+ * Định dạng lưu trữ: roomKey_<roomName> (ví dụ: roomKey_general).
+ * @param {string} room - Tên phòng chat
+ * @returns {string} Chuỗi Khóa phòng hoặc chuỗi rỗng
+ */
+export function getStoredRoomKey(room) {
+  if (typeof window === 'undefined' || !room) return '';
+  try {
+    return localStorage.getItem(`roomKey_${room}`) || '';
+  } catch (e) {
+    console.warn(`[RSA] Không thể đọc roomKey từ localStorage cho phòng "${room}":`, e);
+    return '';
+  }
+}
+
+/**
+ * Lưu trữ Khóa phòng (Room AES Key) vào localStorage của trình duyệt.
+ * @param {string} room - Tên phòng chat
+ * @param {string} key - Chuỗi Khóa phòng (AES Key / Mock Key)
+ */
+export function saveStoredRoomKey(room, key) {
+  if (typeof window === 'undefined' || !room || !key) return;
+  try {
+    localStorage.setItem(`roomKey_${room}`, key);
+    console.log(`[RSA] Đã lưu roomKey cho phòng "${room}" vào localStorage.`);
+  } catch (e) {
+    console.warn(`[RSA] Không thể lưu roomKey vào localStorage cho phòng "${room}":`, e);
+  }
+}
+
+/**
+ * Tải toàn bộ danh sách Khóa phòng đã lưu trong localStorage.
+ * @returns {Record<string, string>} Đối tượng { [roomName]: roomKey }
+ */
+export function getAllStoredRoomKeys() {
+  if (typeof window === 'undefined') return {};
+  const keys = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('roomKey_')) {
+        const roomName = k.substring('roomKey_'.length);
+        const val = localStorage.getItem(k);
+        if (roomName && val) {
+          keys[roomName] = val;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[RSA] Không thể nạp danh sách roomKey từ localStorage:', e);
+  }
+  return keys;
+}
+
+/**
+ * Xóa Khóa phòng khỏi localStorage.
+ * @param {string} room - Tên phòng chat
+ */
+export function clearStoredRoomKey(room) {
+  if (typeof window === 'undefined' || !room) return;
+  try {
+    localStorage.removeItem(`roomKey_${room}`);
+  } catch (e) {
+    console.warn(`[RSA] Không thể xóa roomKey khỏi localStorage cho phòng "${room}":`, e);
+  }
 }
 
 /**

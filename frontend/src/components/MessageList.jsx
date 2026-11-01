@@ -22,7 +22,7 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
       if (!roomKey) return;
 
       for (const msg of messages) {
-        if (msg.isSystem || decryptedCache[msg.id]) continue;
+        if (msg.isSystem || decryptedCache[msg.id]?.isDecrypted) continue;
 
         let plainText = msg.text;
         let plainAttachmentData = msg.attachment?.data;

@@ -9,7 +9,10 @@ import {
   getOrGenerateRSAKeyPair,
   rsaEncrypt,
   rsaDecrypt,
-  generateMockAESKey
+  generateMockAESKey,
+  getStoredRoomKey,
+  saveStoredRoomKey,
+  getAllStoredRoomKeys
 } from '../crypto/rsa';
 import { generateHMAC, deriveKeys } from '../crypto/hmac';
 
@@ -19,13 +22,13 @@ export default function Chat({ user, onLogout }) {
   const [isConnected, setIsConnected] = useState(socket.connected);
 
   // --- CÁC STATE PHỤC VỤ TRAO ĐỔI KHÓA RSA (HANDSHAKE) & MOCK AES KEY ---
-  // 1. Cặp khóa RSA cá nhân (1024-bit) lưu tạm theo phiên sessionStorage
+  // 1. Cặp khóa RSA cá nhân (1024-bit) lưu bền vững theo user trong localStorage
   const [rsaKeyPair] = useState(() => getOrGenerateRSAKeyPair(user.username));
   const rsaKeyPairRef = useRef(rsaKeyPair);
   rsaKeyPairRef.current = rsaKeyPair;
 
-  // 2. Khóa đối xứng bí mật của các phòng chat: { [roomName]: 'aes_key_...' }
-  const [roomKeys, setRoomKeys] = useState({});
+  // 2. Khóa đối xứng bí mật của các phòng chat: nạp sẵn từ localStorage
+  const [roomKeys, setRoomKeys] = useState(() => getAllStoredRoomKeys());
   const roomKeysRef = useRef(roomKeys);
   roomKeysRef.current = roomKeys;
 
@@ -81,16 +84,19 @@ export default function Chat({ user, onLogout }) {
     // Xóa tin nhắn phòng cũ khi chuyển phòng
     setMessages([]);
 
-    // Kiểm tra nếu phòng này đã có khóa từ trước trong bộ nhớ
-    const existingKey = roomKeysRef.current[room];
+    // Kiểm tra nếu phòng này đã có khóa từ trước trong localStorage hoặc state
+    const existingKey = roomKeysRef.current[room] || getStoredRoomKey(room);
     if (existingKey) {
+      if (!roomKeysRef.current[room]) {
+        setRoomKeys((prev) => ({ ...prev, [room]: existingKey }));
+      }
       setHandshakeState({
         status: 'ready',
-        message: 'Khóa đối xứng của phòng đã sẵn sàng trong bộ nhớ phiên.',
+        message: 'Khóa đối xứng của phòng đã sẵn sàng từ localStorage.',
         isInitiator: false,
         distributor: null
       });
-      addHandshakeLog('info', `Sử dụng khóa phòng "${room}" đã lưu: ${existingKey.substring(0, 16)}...`);
+      addHandshakeLog('info', `Tải lại khóa phòng "${room}" từ localStorage: ${existingKey.substring(0, 16)}...`);
     } else {
       setHandshakeState({
         status: 'pending',
@@ -132,23 +138,31 @@ export default function Chat({ user, onLogout }) {
     const handleInitRoomKeyHolder = ({ room: targetRoom }) => {
       if (targetRoom !== room) return;
 
-      let key = roomKeysRef.current[targetRoom];
+      // Ưu tiên tái sử dụng khóa từ state hoặc localStorage để không làm mất lịch sử giải mã khi F5
+      let key = roomKeysRef.current[targetRoom] || getStoredRoomKey(targetRoom);
       if (!key) {
         key = generateMockAESKey();
-        setRoomKeys((prev) => ({ ...prev, [targetRoom]: key }));
+        addHandshakeLog(
+          'init',
+          `Là người đầu tiên trong phòng "${targetRoom}". Đã khởi tạo Mock AES Key: ${key.substring(0, 18)}...`
+        );
+      } else {
+        addHandshakeLog(
+          'init',
+          `Tái sử dụng Khóa AES phòng "${targetRoom}" từ localStorage: ${key.substring(0, 18)}...`
+        );
       }
+
+      // Lưu bền vững vào localStorage và cập nhật state
+      saveStoredRoomKey(targetRoom, key);
+      setRoomKeys((prev) => ({ ...prev, [targetRoom]: key }));
 
       setHandshakeState({
         status: 'ready',
-        message: 'Bạn là thành viên đầu tiên trong phòng. Đã khởi tạo khóa Mock AES.',
+        message: 'Bạn là thành viên đầu tiên trong phòng. Khóa phòng đã sẵn sàng.',
         isInitiator: true,
         distributor: null
       });
-
-      addHandshakeLog(
-        'init',
-        `Là người đầu tiên trong phòng "${targetRoom}". Đã khởi tạo Mock AES Key: ${key.substring(0, 18)}...`
-      );
     };
 
     // Sự kiện 2: Server yêu cầu NGƯỜI CŨ mã hóa khóa phòng gửi cho NGƯỜI MỚI (A gửi B)
@@ -165,11 +179,13 @@ export default function Chat({ user, onLogout }) {
         `Nhận yêu cầu phân phối khóa từ "${requesterUsername}". Đang mã hóa khóa phòng bằng Public Key của họ...`
       );
 
-      let key = roomKeysRef.current[targetRoom];
+      // Ưu tiên lấy khóa từ state hoặc localStorage
+      let key = roomKeysRef.current[targetRoom] || getStoredRoomKey(targetRoom);
       if (!key) {
         key = generateMockAESKey();
-        setRoomKeys((prev) => ({ ...prev, [targetRoom]: key }));
       }
+      saveStoredRoomKey(targetRoom, key);
+      setRoomKeys((prev) => ({ ...prev, [targetRoom]: key }));
 
       try {
         // Mã hóa khóa AES bằng RSA Public Key của người mới
@@ -220,7 +236,8 @@ export default function Chat({ user, onLogout }) {
         // Giải mã bằng chính Private Key của mình
         const decryptedAESKey = rsaDecrypt(rsaKeyPairRef.current.privateKey, encryptedKey);
 
-        // Lưu vào bộ nhớ khóa phòng
+        // Lưu bền vững vào localStorage và cập nhật state
+        saveStoredRoomKey(targetRoom, decryptedAESKey);
         setRoomKeys((prev) => ({ ...prev, [targetRoom]: decryptedAESKey }));
 
         setHandshakeState({
@@ -232,7 +249,7 @@ export default function Chat({ user, onLogout }) {
 
         addHandshakeLog(
           'receive',
-          `Bắt tay thành công! Khóa phòng nhận được: ${decryptedAESKey.substring(0, 18)}...`
+          `Bắt tay thành công! Đã lưu khóa phòng vào localStorage: ${decryptedAESKey.substring(0, 18)}...`
         );
       } catch (err) {
         console.error('[RSA Handshake] Lỗi giải mã khóa phòng:', err);
