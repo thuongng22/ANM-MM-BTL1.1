@@ -1,0 +1,12 @@
+{
+  "name": "chat-e2ee-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Workspace root proxying scripts to srcs/",
+  "scripts": {
+    "dev": "npm --prefix srcs run dev",
+    "dev:backend": "npm --prefix srcs run dev:backend",
+    "dev:frontend": "npm --prefix srcs run dev:frontend",
+    "install:all": "npm --prefix srcs run install:all"
+  }
+}

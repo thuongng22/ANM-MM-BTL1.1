@@ -373,5 +373,7 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server Backend đang hoạt động tại cổng ${PORT} (Đã bind 0.0.0.0 cho mạng LAN & Localhost)`);
+  console.log('\n  🚀 Hệ thống E2EE Chat đã sẵn sàng:');
+  console.log(`  ➜  Giao diện Web (Frontend):  http://localhost:5173/`);
+  console.log(`  ➜  Máy chủ Relay (Backend):   http://localhost:${PORT}/ (0.0.0.0 LAN Ready)\n`);
 });
