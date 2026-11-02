@@ -1,15 +1,9 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
-import { MessageSquare, FileText, Download, ShieldCheck, ShieldAlert, Lock } from 'lucide-react';
-import { verifyHMAC, deriveKeys } from '../crypto/hmac';
+import React, { useEffect, useRef, useState } from 'react';
+import { MessageSquare, FileText, Download, ShieldCheck } from 'lucide-react';
 import { decryptText } from '../services/aes_service.js';
 
 export default function MessageList({ messages, currentUser, roomKey, isKeyReady }) {
   const bottomRef = useRef(null);
-
-  // Dẫn xuất HMAC Key từ Room Key để kiểm tra tính toàn vẹn
-  const hmacKey = useMemo(() => {
-    return deriveKeys(roomKey).hmacKey;
-  }, [roomKey]);
 
   // Bộ nhớ đệm lưu trữ kết quả giải mã AES: { [msgId]: { text, attachmentData, isDecrypted } }
   const [decryptedCache, setDecryptedCache] = useState({});
@@ -113,7 +107,6 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
           const cached = decryptedCache[msg.id];
           const displayText = cached?.text ?? msg.text;
           const displayAttachmentData = cached?.attachmentData ?? msg.attachment?.data;
-          const isAES = cached?.isDecrypted || Boolean(msg.iv);
 
           // 2. Tin nhắn người dùng (phân chia Trái / Phải)
           const isMe = msg.sender === currentUser;
@@ -197,50 +190,13 @@ export default function MessageList({ messages, currentUser, roomKey, isKeyReady
                 )}
               </div>
 
-              {/* Thông tin phụ: Thời gian gửi & Huy hiệu AES/HMAC */}
+              {/* Thông tin phụ: Thời gian gửi */}
               <div
-                className={`flex items-center gap-2 mt-1 text-[10px] text-slate ${
+                className={`flex items-center gap-1.5 mt-1 text-[10px] text-slate ${
                   isMe ? 'mr-1.5 flex-row-reverse' : 'ml-1.5'
                 }`}
               >
                 <span>{msg.timestamp}</span>
-
-                {/* Huy hiệu AES-GCM (nếu tin nhắn được mã hóa) */}
-                {isAES && (
-                  <span
-                    className="inline-flex items-center gap-0.5 text-amber-300 font-medium bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20"
-                    title="Tin nhắn được mã hóa đầu cuối bằng chuẩn AES-256-GCM"
-                  >
-                    <Lock className="w-3 h-3 text-amber-400" />
-                    <span>AES-256</span>
-                  </span>
-                )}
-
-                {/* Kiểm tra chữ ký HMAC nếu tin nhắn có kèm chữ ký */}
-                {msg.hmac && (
-                  (() => {
-                    const content = (msg.text || '') + (msg.attachment?.data || '');
-                    const isValid = hmacKey ? verifyHMAC(content, hmacKey, msg.hmac) : false;
-
-                    return isValid ? (
-                      <span
-                        className="inline-flex items-center gap-0.5 text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20"
-                        title="HMAC-SHA256: Dữ liệu nguyên vẹn 100%, không bị sửa đổi"
-                      >
-                        <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                        <span>HMAC OK</span>
-                      </span>
-                    ) : (
-                      <span
-                        className="inline-flex items-center gap-0.5 text-rose-400 font-medium bg-rose-500/10 px-1.5 py-0.2 rounded border border-rose-500/20"
-                        title="Cảnh báo: Chữ ký HMAC không khớp! Dữ liệu có thể đã bị sửa đổi trên đường truyền"
-                      >
-                        <ShieldAlert className="w-3 h-3 text-rose-400" />
-                        <span>HMAC Lỗi</span>
-                      </span>
-                    );
-                  })()
-                )}
               </div>
             </div>
           );
