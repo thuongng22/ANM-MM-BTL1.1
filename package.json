@@ -10,3 +10,4 @@
     "install:all": "npm --prefix srcs run install:all"
   }
 }
+

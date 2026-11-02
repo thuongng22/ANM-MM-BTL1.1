@@ -12,10 +12,13 @@ export default function Header({
   onOpenKeyModal,
   onOpenDiagramModal,
   onClearChat,
+  roomUsers = [],
   roomUsersCount = 0
 }) {
   const availableRooms = ['general', 'crypto-lab', 'announcements'];
   const isKeyReady = keyStatus?.status === 'ready' && Boolean(roomKey);
+  const myMember = roomUsers?.find((u) => u.username === username);
+  const myStatus = !isConnected ? 'offline' : myMember?.status || 'online';
 
   return (
     <header className="h-[72px] bg-night border-b border-white/5 px-4 sm:px-8 flex items-center justify-between shrink-0">
@@ -120,12 +123,42 @@ export default function Header({
           </button>
         )}
 
-        {/* Current User Pill */}
-        <div className="flex items-center gap-2 bg-white/5 border border-white/10 pl-3 pr-2.5 py-1.5 rounded-full text-xs text-on-dark">
-          <div className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-semibold">
-            {username?.charAt(0).toUpperCase()}
+        {/* Current User Pill kèm Avatar và Chấm trạng thái */}
+        <div
+          className="flex items-center gap-2 bg-white/5 border border-white/10 pl-2.5 pr-3 py-1.5 rounded-full text-xs text-on-dark"
+          title={`Tài khoản: ${username} (${
+            !isConnected ? 'Mất kết nối' : myStatus === 'away' ? 'Tạm vắng (Đang rời tab)' : 'Đang trực tuyến'
+          })`}
+        >
+          <div className="relative shrink-0">
+            <div className="w-6 h-6 rounded-full bg-primary/25 border border-primary/40 text-primary flex items-center justify-center text-[10px] font-semibold">
+              {username?.charAt(0).toUpperCase()}
+            </div>
+            {/* Chấm trạng thái: Xanh (Online), Vàng (Tạm vắng), Đỏ (Offline) */}
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-night ${
+                !isConnected
+                  ? 'bg-rose-500'
+                  : myStatus === 'away'
+                  ? 'bg-amber-400'
+                  : 'bg-emerald-400'
+              }`}
+            />
           </div>
-          <span className="font-medium text-on-dark max-w-[100px] truncate">{username}</span>
+          <div className="flex flex-col">
+            <span className="font-medium text-on-dark max-w-[90px] truncate leading-none mb-0.5">{username}</span>
+            <span
+              className={`text-[9px] leading-none font-medium ${
+                !isConnected
+                  ? 'text-rose-400'
+                  : myStatus === 'away'
+                  ? 'text-amber-400'
+                  : 'text-emerald-400'
+              }`}
+            >
+              {!isConnected ? 'Offline' : myStatus === 'away' ? 'Tạm vắng' : 'Online'}
+            </span>
+          </div>
         </div>
 
         {/* Logout Button */}

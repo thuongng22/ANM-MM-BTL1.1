@@ -67,6 +67,27 @@ export default function Chat({ user, onLogout }) {
   const activeRoomKey = roomKeys[room] || '';
   const isKeyReady = handshakeState.status === 'ready' && Boolean(activeRoomKey);
 
+  // Quản lý trạng thái tab của người dùng: Online (khi mở tab) vs Away (khi rời khỏi tab / ẩn tab)
+  useEffect(() => {
+    const handleVisibility = () => {
+      const status = document.visibilityState === 'visible' ? 'online' : 'away';
+      socket.emit('update_status', { status });
+    };
+
+    const handleFocus = () => socket.emit('update_status', { status: 'online' });
+    const handleBlur = () => socket.emit('update_status', { status: 'away' });
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
   useEffect(() => {
     const handleConnect = () => {
       setIsConnected(true);
@@ -355,7 +376,8 @@ export default function Chat({ user, onLogout }) {
         onOpenKeyModal={() => setIsKeyModalOpen(true)}
         onOpenDiagramModal={() => setIsDiagramModalOpen(true)}
         onClearChat={handleClearRoomMessages}
-        roomUsersCount={roomUsers.length}
+        roomUsers={roomUsers}
+        roomUsersCount={roomUsers.filter((u) => u.status !== 'offline').length}
       />
 
       <MessageList
@@ -363,6 +385,7 @@ export default function Chat({ user, onLogout }) {
         currentUser={user.username}
         roomKey={activeRoomKey}
         isKeyReady={isKeyReady}
+        roomUsers={roomUsers}
       />
 
       <MessageInput

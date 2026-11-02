@@ -153,22 +153,61 @@ const io = new Server(server, {
 });
 
 const activeSockets = new Map();
+const userStatuses = new Map(); // username -> 'online' | 'away' | 'offline'
+const roomJoinedHistory = new Set(); // Set lưu `${room}:${username}` để xác định lần đầu tham gia
 
-// Helper lấy danh sách thành viên đang hoạt động trong phòng
+// Khởi tạo lịch sử tham gia phòng từ database
+function initRoomHistory() {
+  const db = readDatabase();
+  if (Array.isArray(db.joinedHistory)) {
+    db.joinedHistory.forEach((item) => roomJoinedHistory.add(item));
+  } else if (Array.isArray(db.messages)) {
+    db.messages.forEach((m) => {
+      if (m.room && m.sender && !m.isSystem) {
+        roomJoinedHistory.add(`${m.room}:${m.sender}`);
+      }
+    });
+  }
+}
+initRoomHistory();
+
+// Helper lấy danh sách thành viên trong phòng kèm trạng thái (online, away, offline)
 function getRoomMembers(room) {
-  const members = [];
+  const membersMap = new Map();
+  const db = readDatabase();
+
+  // 1. Các user đang có socket kết nối trong phòng
+  const activeUsernames = new Set();
   for (const [id, s] of activeSockets.entries()) {
     if (s.room === room) {
-      members.push({
+      activeUsernames.add(s.username);
+      membersMap.set(s.username, {
         socketId: s.socketId,
         username: s.username,
         publicKey: s.publicKey || null,
-        joinedAt: s.joinedAt
+        joinedAt: s.joinedAt,
+        status: s.status || 'online' // 'online' | 'away'
       });
     }
   }
-  // Sắp xếp theo thứ tự tham gia (người vào trước đứng đầu để làm distributor)
-  return members.sort((a, b) => a.joinedAt - b.joinedAt);
+
+  // 2. Thêm các user đã từng tham gia phòng nhưng hiện đang offline
+  for (const record of roomJoinedHistory) {
+    const [r, u] = record.split(':');
+    if (r === room && !membersMap.has(u)) {
+      membersMap.set(u, {
+        socketId: null,
+        username: u,
+        publicKey: null,
+        joinedAt: 0,
+        status: 'offline'
+      });
+    }
+  }
+
+  const list = Array.from(membersMap.values());
+  const statusWeight = { online: 3, away: 2, offline: 1 };
+  return list.sort((a, b) => (statusWeight[b.status] || 0) - (statusWeight[a.status] || 0));
 }
 
 io.on('connection', (socket) => {
@@ -186,15 +225,17 @@ io.on('connection', (socket) => {
 
     socket.join(room);
 
-    // Lưu phiên hoạt động kèm RSA Public Key
+    // Lưu phiên hoạt động kèm RSA Public Key và trạng thái 'online'
     const sessionData = {
       socketId: socket.id,
       username,
       room,
       publicKey: publicKey || null,
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      status: 'online'
     };
     activeSockets.set(socket.id, sessionData);
+    userStatuses.set(username, 'online');
 
     // Đọc lịch sử tin nhắn của phòng từ database.json
     const db = readDatabase();
@@ -209,15 +250,22 @@ io.on('connection', (socket) => {
     // Phát danh sách toàn bộ thành viên phòng hiện tại cho mọi người trong phòng
     io.to(room).emit('room_users', getRoomMembers(room));
 
-    // Thông báo cho các thành viên khác
-    socket.to(room).emit('receive_message', {
-      id: `sys_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      sender: 'Hệ thống',
-      text: `${username} đã tham gia phòng.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isSystem: true,
-      room
-    });
+    // CHỈ THÔNG BÁO KHI NGƯỜI DÙNG THAM GIA PHÒNG LẦN ĐẦU TIÊN
+    const userRoomKey = `${room}:${username}`;
+    if (!roomJoinedHistory.has(userRoomKey)) {
+      roomJoinedHistory.add(userRoomKey);
+      db.joinedHistory = Array.from(roomJoinedHistory);
+      writeDatabase(db);
+
+      socket.to(room).emit('receive_message', {
+        id: `sys_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        sender: 'Hệ thống',
+        text: `${username} đã tham gia phòng.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isSystem: true,
+        room
+      });
+    }
 
     // --- LUỒNG BẮT TAY TRAO ĐỔI KHÓA RSA (RSA HANDSHAKE PROTOCOL) ---
     if (existingMembers.length === 0) {
@@ -349,25 +397,28 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 6. Xử lý khi ngắt kết nối
+  // 6. Cập nhật trạng thái người dùng (online, away, offline)
+  socket.on('update_status', ({ status }) => {
+    const session = activeSockets.get(socket.id);
+    if (!session) return;
+    if (['online', 'away', 'offline'].includes(status)) {
+      session.status = status;
+      userStatuses.set(session.username, status);
+      io.to(session.room).emit('room_users', getRoomMembers(session.room));
+    }
+  });
+
+  // 7. Xử lý khi ngắt kết nối (Chuyển sang offline, không phát tin nhắn rời phòng)
   socket.on('disconnect', () => {
     const session = activeSockets.get(socket.id);
     if (session) {
       const { username, room } = session;
       activeSockets.delete(socket.id);
+      userStatuses.set(username, 'offline');
 
-      socket.to(room).emit('receive_message', {
-        id: `sys_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        sender: 'Hệ thống',
-        text: `${username} đã rời phòng.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isSystem: true,
-        room
-      });
-
-      // Cập nhật lại danh sách thành viên còn lại trong phòng
+      // Cập nhật lại danh sách thành viên trong phòng kèm trạng thái mới
       io.to(room).emit('room_users', getRoomMembers(room));
-      console.log(`[Socket] "${username}" đã rời phòng "${room}". Còn lại: ${getRoomMembers(room).length} thành viên.`);
+      console.log(`[Socket] "${username}" đã ngắt kết nối (offline) khỏi phòng "${room}".`);
     }
   });
 });
