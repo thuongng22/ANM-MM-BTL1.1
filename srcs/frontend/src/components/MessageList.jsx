@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { MessageSquare, FileText, Download, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { MessageSquare, FileText, Download, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { verifyHMAC, deriveKeys } from '../crypto/hmac';
 import { decryptText } from '../services/aes_service.js';
 
 export default function MessageList({
@@ -10,6 +11,11 @@ export default function MessageList({
   roomUsers = []
 }) {
   const bottomRef = useRef(null);
+
+  // Dẫn xuất HMAC Key từ Room Key để kiểm tra tính toàn vẹn và phát hiện tấn công MitM
+  const hmacKey = useMemo(() => {
+    return roomKey ? deriveKeys(roomKey).hmacKey : '';
+  }, [roomKey]);
 
   // Bộ nhớ đệm lưu trữ kết quả giải mã AES: { [msgId]: { text, attachmentData, isDecrypted } }
   const [decryptedCache, setDecryptedCache] = useState({});
@@ -117,6 +123,18 @@ export default function MessageList({
           const displayText = cached?.text ?? msg.text;
           const displayAttachmentData = cached?.attachmentData ?? msg.attachment?.data;
 
+          // Kiểm tra phát hiện tấn công Giả mạo / Can thiệp dữ liệu (MitM) qua HMAC-SHA256
+          const rawContent = (msg.text || '') + (msg.attachment?.data || '');
+          const isHmacFailed = Boolean(
+            msg.hmac && hmacKey && !verifyHMAC(rawContent, hmacKey, msg.hmac)
+          );
+
+          // Kiểm tra lỗi giải mã AES (khi tin nhắn có mã hóa nhưng giải mã thất bại do khóa sai hoặc ciphertext hỏng)
+          const isEncryptedMsg = Boolean(msg.iv || msg.isEncrypted);
+          const isDecryptionFailed = Boolean(
+            isEncryptedMsg && roomKey && cached !== undefined && !cached.isDecrypted
+          );
+
           // 2. Tin nhắn người dùng (phân chia Trái / Phải kèm Avatar và Chấm trạng thái)
           const isMe = msg.sender === currentUser;
           const senderMember = roomUsers?.find((u) => u.username === msg.sender);
@@ -137,14 +155,14 @@ export default function MessageList({
                     senderStatus === 'online'
                       ? 'Đang trực tuyến'
                       : senderStatus === 'away'
-                      ? 'Tạm vắng (Đang rời tab)'
+                      ? 'Away (Đang rời tab)'
                       : 'Ngoại tuyến'
                   })`}
                 >
                   <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary/30 to-periwinkle/30 border border-white/10 text-periwinkle flex items-center justify-center font-semibold text-xs shadow-sm">
                     {msg.sender?.charAt(0).toUpperCase()}
                   </div>
-                  {/* Chấm tròn trạng thái: Xanh (Online), Vàng (Tạm vắng), Đỏ (Offline) */}
+                  {/* Chấm tròn trạng thái: Xanh (Online), Vàng (Away), Đỏ (Offline) */}
                   <span
                     className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-night ${
                       senderStatus === 'online'
@@ -172,7 +190,7 @@ export default function MessageList({
                           : 'text-slate bg-white/5 border border-white/10'
                       }`}
                     >
-                      {senderStatus === 'online' ? 'Online' : senderStatus === 'away' ? 'Tạm vắng' : 'Offline'}
+                      {senderStatus === 'online' ? 'Online' : senderStatus === 'away' ? 'Away' : 'Offline'}
                     </span>
                   </div>
                 )}
@@ -180,7 +198,11 @@ export default function MessageList({
                 {/* Bong bóng tin nhắn */}
                 <div
                   className={`relative px-4 py-2.5 break-words text-sm leading-relaxed transition-all w-full ${
-                    isMe
+                    isHmacFailed
+                      ? 'bg-rose-950/40 border border-rose-500/60 text-rose-100 rounded-[20px] shadow-lg shadow-rose-950/50'
+                      : isDecryptionFailed
+                      ? 'bg-amber-950/40 border border-amber-500/50 text-amber-100 rounded-[20px]'
+                      : isMe
                       ? 'bg-primary text-white rounded-[20px] rounded-br-sm shadow-md shadow-primary/15'
                       : 'bg-night-raised border border-white/10 text-on-dark rounded-[20px] rounded-bl-sm shadow-sm'
                   }`}
@@ -244,13 +266,35 @@ export default function MessageList({
                   )}
                 </div>
 
-                {/* Thông tin phụ: Thời gian gửi */}
+                {/* Thông tin phụ: Thời gian gửi & Huy hiệu cảnh báo khi bị lỗi / MitM */}
                 <div
-                  className={`flex items-center gap-1.5 mt-1 text-[10px] text-slate ${
-                    isMe ? 'mr-1.5' : 'ml-1.5'
+                  className={`flex items-center gap-2 mt-1 text-[10px] text-slate ${
+                    isMe ? 'mr-1.5 flex-row-reverse' : 'ml-1.5'
                   }`}
                 >
                   <span>{msg.timestamp}</span>
+
+                  {/* 1. CẢNH BÁO TẤN CÔNG GIẢ MẠO / MITM (Chữ ký HMAC không khớp) */}
+                  {isHmacFailed && (
+                    <span
+                      className="inline-flex items-center gap-1 text-rose-300 font-semibold bg-rose-500/20 px-2 py-0.5 rounded-full border border-rose-500/40 animate-pulse text-[10px]"
+                      title="Cảnh báo an ninh MitM: Chữ ký HMAC-SHA256 không hợp lệ! Bản tin đã bị kẻ tấn công can thiệp hoặc sửa đổi trên đường truyền."
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span>CẢNH BÁO: BỊ GIẢ MẠO (MitM)</span>
+                    </span>
+                  )}
+
+                  {/* 2. CẢNH BÁO LỖI GIẢI MÃ (Ciphertext hỏng hoặc khóa không khớp) */}
+                  {!isHmacFailed && isDecryptionFailed && (
+                    <span
+                      className="inline-flex items-center gap-1 text-amber-300 font-medium bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/40 text-[10px]"
+                      title="Lỗi giải mã AES: Khóa phòng hiện tại không thể giải mã được Ciphertext này."
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>LỖI GIẢI MÃ</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -258,26 +302,24 @@ export default function MessageList({
               {isMe && (
                 <div
                   className="relative shrink-0 mb-5"
-                  title={`${currentUser} (Bạn - ${
-                    myStatus === 'online'
+                  title={`${currentUser} (Bạn - ${myStatus === 'online'
                       ? 'Đang trực tuyến'
                       : myStatus === 'away'
-                      ? 'Tạm vắng (Đang rời tab)'
-                      : 'Offline'
-                  })`}
+                        ? 'Away (Đang rời tab)'
+                        : 'Offline'
+                    })`}
                 >
                   <div className="w-8 h-8 rounded-full bg-primary/25 border border-primary/40 text-primary flex items-center justify-center font-semibold text-xs shadow-sm">
                     {currentUser?.charAt(0).toUpperCase()}
                   </div>
                   {/* Chấm tròn trạng thái của mình */}
                   <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-night ${
-                      myStatus === 'online'
+                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-night ${myStatus === 'online'
                         ? 'bg-emerald-400'
                         : myStatus === 'away'
-                        ? 'bg-amber-400'
-                        : 'bg-rose-500'
-                    }`}
+                          ? 'bg-amber-400'
+                          : 'bg-rose-500'
+                      }`}
                   />
                 </div>
               )}
