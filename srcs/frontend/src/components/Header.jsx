@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, LogOut, Hash, Key, Lock, Users, Layers, Trash2 } from 'lucide-react';
+import { Shield, LogOut, Hash, Key, Lock, Users, RotateCcw } from 'lucide-react';
 
 export default function Header({
   username,
@@ -10,7 +10,7 @@ export default function Header({
   keyStatus,
   roomKey,
   onOpenKeyModal,
-  onOpenDiagramModal,
+  onResetTest,
   onClearChat,
   roomUsers = [],
   roomUsersCount = 0
@@ -38,9 +38,8 @@ export default function Header({
           <div className="flex items-center gap-2 text-xs text-fog mt-1">
             <div className="flex items-center gap-1.5">
               <span
-                className={`w-2 h-2 rounded-full ${
-                  isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
-                }`}
+                className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                  }`}
               />
               <span>{isConnected ? 'Trực tuyến' : 'Mất kết nối'}</span>
             </div>
@@ -57,26 +56,14 @@ export default function Header({
 
       {/* Room Selector & Security Badge & User Navigation */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Nút Xem Mô Hình E2EE Diagram (Báo Cáo Giảng Viên) */}
-        <button
-          type="button"
-          onClick={onOpenDiagramModal}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-primary/30 bg-primary/10 hover:bg-primary/20 text-periwinkle transition-all active:scale-95 shadow-sm"
-          title="Bấm để mở Sơ đồ Mô hình Luồng dữ liệu E2EE (Báo cáo Giảng viên)"
-        >
-          <Layers className="w-3.5 h-3.5 text-periwinkle shrink-0" />
-          <span className="hidden sm:inline font-medium">Mô hình E2EE</span>
-        </button>
-
         {/* RSA E2EE Security Status Pill */}
         <button
           type="button"
           onClick={onOpenKeyModal}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all active:scale-95 shadow-sm ${
-            isKeyReady
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all active:scale-95 shadow-sm ${isKeyReady
               ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
               : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse'
-          }`}
+            }`}
           title="Bấm để xem chi tiết Khóa RSA & Bắt tay E2EE"
         >
           {isKeyReady ? (
@@ -98,11 +85,10 @@ export default function Header({
             <button
               key={r}
               onClick={() => onRoomChange && onRoomChange(r)}
-              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs transition-all ${
-                room === r
+              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs transition-all ${room === r
                   ? 'bg-primary text-white shadow-sm'
                   : 'text-fog hover:text-on-dark hover:bg-white/5'
-              }`}
+                }`}
             >
               <Hash className="w-3 h-3" />
               <span>{r}</span>
@@ -110,53 +96,51 @@ export default function Header({
           ))}
         </div>
 
-        {/* Clear Chat Room Button */}
-        {onClearChat && (
+        {/* Reset Test Scenario & Logout Button */}
+        {(onResetTest || onClearChat) && (
           <button
             type="button"
-            onClick={onClearChat}
+            onClick={onResetTest || onClearChat}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 transition-all active:scale-95 shadow-sm"
-            title={`Xóa toàn bộ tin nhắn trong phòng #${room}`}
+            title={`Reset toàn bộ tiến trình test phòng #${room}, xóa khóa E2EE, xóa tin nhắn và đăng xuất tất cả để test lại từ đầu`}
           >
-            <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <span className="hidden sm:inline font-medium">Xóa chat</span>
+            <RotateCcw className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <span className="hidden sm:inline font-medium">Reset tiến trình test</span>
+            <span className="sm:hidden font-medium">Reset test</span>
           </button>
         )}
 
         {/* Current User Pill kèm Avatar và Chấm trạng thái */}
         <div
           className="flex items-center gap-2 bg-white/5 border border-white/10 pl-2.5 pr-3 py-1.5 rounded-full text-xs text-on-dark"
-          title={`Tài khoản: ${username} (${
-            !isConnected ? 'Mất kết nối' : myStatus === 'away' ? 'Tạm vắng (Đang rời tab)' : 'Đang trực tuyến'
-          })`}
+          title={`Tài khoản: ${username} (${!isConnected ? 'Mất kết nối' : myStatus === 'away' ? 'Away (Đang rời tab)' : 'Đang trực tuyến'
+            })`}
         >
           <div className="relative shrink-0">
             <div className="w-6 h-6 rounded-full bg-primary/25 border border-primary/40 text-primary flex items-center justify-center text-[10px] font-semibold">
               {username?.charAt(0).toUpperCase()}
             </div>
-            {/* Chấm trạng thái: Xanh (Online), Vàng (Tạm vắng), Đỏ (Offline) */}
+            {/* Chấm trạng thái: Xanh (Online), Vàng (Away), Đỏ (Offline) */}
             <span
-              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-night ${
-                !isConnected
+              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-night ${!isConnected
                   ? 'bg-rose-500'
                   : myStatus === 'away'
-                  ? 'bg-amber-400'
-                  : 'bg-emerald-400'
-              }`}
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-400'
+                }`}
             />
           </div>
           <div className="flex flex-col">
             <span className="font-medium text-on-dark max-w-[90px] truncate leading-none mb-0.5">{username}</span>
             <span
-              className={`text-[9px] leading-none font-medium ${
-                !isConnected
+              className={`text-[9px] leading-none font-medium ${!isConnected
                   ? 'text-rose-400'
                   : myStatus === 'away'
-                  ? 'text-amber-400'
-                  : 'text-emerald-400'
-              }`}
+                    ? 'text-amber-400'
+                    : 'text-emerald-400'
+                }`}
             >
-              {!isConnected ? 'Offline' : myStatus === 'away' ? 'Tạm vắng' : 'Online'}
+              {!isConnected ? 'Offline' : myStatus === 'away' ? 'Away' : 'Online'}
             </span>
           </div>
         </div>

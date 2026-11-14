@@ -3,56 +3,50 @@ import Header from './Header';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import KeyDetailsModal from './KeyDetailsModal';
-import E2EEDiagramModal from './E2EEDiagramModal';
 import { socket } from '../socket';
 import {
   getOrGenerateRSAKeyPair,
   rsaEncrypt,
   rsaDecrypt,
-  generateMockAESKey,
+  generateAESKey,
   getStoredRoomKey,
   saveStoredRoomKey,
-  getAllStoredRoomKeys
+  getAllStoredRoomKeys,
+  clearStoredRoomKey,
+  HANDSHAKE_WATERMARK_MESSAGE
 } from '../crypto/rsa';
 import { generateHMAC, deriveKeys } from '../crypto/hmac';
+import { encryptText } from '../services/aes_service';
 
 export default function Chat({ user, onLogout }) {
   const [room, setRoom] = useState('general');
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(socket.connected);
 
-  // --- CÁC STATE PHỤC VỤ TRAO ĐỔI KHÓA RSA (HANDSHAKE) & MOCK AES KEY ---
-  // 1. Cặp khóa RSA cá nhân (1024-bit) lưu bền vững theo user trong localStorage
   const [rsaKeyPair] = useState(() => getOrGenerateRSAKeyPair(user.username));
   const rsaKeyPairRef = useRef(rsaKeyPair);
   rsaKeyPairRef.current = rsaKeyPair;
 
-  // 2. Khóa đối xứng bí mật của các phòng chat: nạp sẵn từ localStorage
   const [roomKeys, setRoomKeys] = useState(() => getAllStoredRoomKeys());
   const roomKeysRef = useRef(roomKeys);
   roomKeysRef.current = roomKeys;
 
-  // 3. Trạng thái bắt tay RSA hiện tại của phòng đang mở
+  const roomRef = useRef(room);
+  roomRef.current = room;
+
+  const handshakeTimeoutRef = useRef(null);
+
   const [handshakeState, setHandshakeState] = useState({
-    status: 'idle', // 'idle' | 'pending' | 'ready' | 'error'
+    status: 'idle',
     message: '',
     isInitiator: false,
     distributor: null
   });
 
-  // 4. Danh sách các thành viên đang có mặt trong phòng
   const [roomUsers, setRoomUsers] = useState([]);
-
-  // 5. Nhật ký các sự kiện bắt tay (Handshake Timeline) để audit/chấm điểm
   const [handshakeLogs, setHandshakeLogs] = useState([]);
-
-  // 6. Điều khiển mở/đóng Modal chi tiết khóa
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
 
-  // 7. Điều khiển mở/đóng Modal sơ đồ kiến trúc E2EE (Báo cáo Giảng viên)
-  const [isDiagramModalOpen, setIsDiagramModalOpen] = useState(false);
-
-  // Helper ghi nhận nhật ký bắt tay
   const addHandshakeLog = (type, text) => {
     const time = new Date().toLocaleTimeString([], {
       hour: '2-digit',
@@ -63,18 +57,42 @@ export default function Chat({ user, onLogout }) {
     setHandshakeLogs((prev) => [{ time, type, text }, ...prev.slice(0, 49)]);
   };
 
-  // Khóa đối xứng hiện tại của phòng đang được chọn
   const activeRoomKey = roomKeys[room] || '';
   const isKeyReady = handshakeState.status === 'ready' && Boolean(activeRoomKey);
 
-  // Quản lý trạng thái tab của người dùng: Online (khi mở tab) vs Away (khi rời khỏi tab / ẩn tab)
+  // Theo doi trang thai online/away theo visibility tab
   useEffect(() => {
-    const handleVisibility = () => {
-      const status = document.visibilityState === 'visible' ? 'online' : 'away';
-      socket.emit('update_status', { status });
+    const checkAndRestoreKeyStatus = () => {
+      const curRoom = roomRef.current;
+      const existingKey = roomKeysRef.current[curRoom] || getStoredRoomKey(curRoom);
+      if (existingKey) {
+        setHandshakeState((prev) =>
+          prev.status !== 'ready'
+            ? {
+              status: 'ready',
+              message: 'Khóa đối xứng của phòng đã sẵn sàng.',
+              isInitiator: prev.isInitiator,
+              distributor: prev.distributor
+            }
+            : prev
+        );
+      }
     };
 
-    const handleFocus = () => socket.emit('update_status', { status: 'online' });
+    const handleVisibility = () => {
+      const isVisible = document.visibilityState === 'visible';
+      const status = isVisible ? 'online' : 'away';
+      socket.emit('update_status', { status });
+      if (isVisible) {
+        checkAndRestoreKeyStatus();
+      }
+    };
+
+    const handleFocus = () => {
+      socket.emit('update_status', { status: 'online' });
+      checkAndRestoreKeyStatus();
+    };
+
     const handleBlur = () => socket.emit('update_status', { status: 'away' });
 
     document.addEventListener('visibilitychange', handleVisibility);
@@ -92,6 +110,13 @@ export default function Chat({ user, onLogout }) {
     const handleConnect = () => {
       setIsConnected(true);
       addHandshakeLog('info', 'Socket đã kết nối thành công tới Server.');
+      // Tự động gia nhập lại phòng khi socket kết nối lại (sau khi tab ngủ hoặc rớt mạng)
+      socket.emit('join_room', {
+        username: user.username,
+        room: roomRef.current,
+        publicKey: rsaKeyPairRef.current.publicKey
+      });
+      socket.emit('update_status', { status: 'online' });
     };
 
     const handleDisconnect = () => {
@@ -137,7 +162,22 @@ export default function Chat({ user, onLogout }) {
     });
 
     // Lắng nghe lịch sử tin nhắn
-    const handleRoomHistory = (history) => {
+    const handleRoomHistory = (payload) => {
+      const history = Array.isArray(payload) ? payload : (payload?.messages || []);
+      const serverResetId = Array.isArray(payload) ? null : payload?.resetId;
+      if (serverResetId) {
+        const localResetId = localStorage.getItem(`roomResetId_${room}`);
+        if (localResetId && localResetId !== serverResetId) {
+          // Phòng đã bị reset khi người dùng này vắng mặt => Cập nhật resetId mới
+          localStorage.setItem(`roomResetId_${room}`, serverResetId);
+          // Nếu chưa có khóa thì yêu cầu phân phối hoặc khởi tạo
+          if (!roomKeysRef.current[room]) {
+            socket.emit('request_room_key_refresh', { room });
+          }
+        } else {
+          localStorage.setItem(`roomResetId_${room}`, serverResetId);
+        }
+      }
       setMessages(history || []);
     };
 
@@ -151,42 +191,41 @@ export default function Chat({ user, onLogout }) {
       setRoomUsers(users || []);
     };
 
-    // =========================================================================
-    // 🔑 CÁC SỰ KIỆN BẮT TAY TRAO ĐỔI KHÓA RSA (RSA HANDSHAKE PROTOCOL)
-    // =========================================================================
-
-    // Sự kiện 1: Server xác nhận user là NGƯỜI ĐẦU TIÊN vào phòng (Key Initiator)
+    // Luong bat tay trao doi khoa RSA
     const handleInitRoomKeyHolder = ({ room: targetRoom }) => {
       if (targetRoom !== room) return;
 
-      // Ưu tiên tái sử dụng khóa từ state hoặc localStorage để không làm mất lịch sử giải mã khi F5
+      if (handshakeTimeoutRef.current) {
+        clearTimeout(handshakeTimeoutRef.current);
+        handshakeTimeoutRef.current = null;
+      }
+
       let key = roomKeysRef.current[targetRoom] || getStoredRoomKey(targetRoom);
       if (!key) {
-        key = generateMockAESKey();
+        key = generateAESKey(targetRoom);
         addHandshakeLog(
           'init',
-          `Là người đầu tiên trong phòng "${targetRoom}". Đã khởi tạo Mock AES Key: ${key.substring(0, 18)}...`
+          `Khoi tao khoa phong tu MSSV: ${key.substring(0, 18)}...`
         );
       } else {
         addHandshakeLog(
           'init',
-          `Tái sử dụng Khóa AES phòng "${targetRoom}" từ localStorage: ${key.substring(0, 18)}...`
+          `Su dung khoa phong tu localStorage: ${key.substring(0, 18)}...`
         );
       }
 
-      // Lưu bền vững vào localStorage và cập nhật state
       saveStoredRoomKey(targetRoom, key);
       setRoomKeys((prev) => ({ ...prev, [targetRoom]: key }));
 
       setHandshakeState({
         status: 'ready',
-        message: 'Bạn là thành viên đầu tiên trong phòng. Khóa phòng đã sẵn sàng.',
+        message: 'Khoa phong da san sang.',
         isInitiator: true,
         distributor: null
       });
     };
 
-    // Sự kiện 2: Server yêu cầu NGƯỜI CŨ mã hóa khóa phòng gửi cho NGƯỜI MỚI (A gửi B)
+    // Khi co peer moi yeu cau khoa phong
     const handleReqRoomKeyDistribution = ({
       requesterSocketId,
       requesterUsername,
@@ -197,22 +236,26 @@ export default function Chat({ user, onLogout }) {
 
       addHandshakeLog(
         'req',
-        `Nhận yêu cầu phân phối khóa từ "${requesterUsername}". Đang mã hóa khóa phòng bằng Public Key của họ...`
+        `Nhan yeu cau khoa tu "${requesterUsername}". Dang ma hoa bang public key...`
       );
 
-      // Ưu tiên lấy khóa từ state hoặc localStorage
       let key = roomKeysRef.current[targetRoom] || getStoredRoomKey(targetRoom);
       if (!key) {
-        key = generateMockAESKey();
+        key = generateAESKey(targetRoom);
       }
       saveStoredRoomKey(targetRoom, key);
       setRoomKeys((prev) => ({ ...prev, [targetRoom]: key }));
 
       try {
-        // Mã hóa khóa AES bằng RSA Public Key của người mới
-        const encryptedKey = rsaEncrypt(requesterPublicKey, key);
+        const handshakePayload = JSON.stringify({
+          key: key,
+          message: HANDSHAKE_WATERMARK_MESSAGE
+        });
 
-        // Gửi ciphertext lên server để chuyển tiếp tới người mới
+        console.log('[Handshake Outgoing Plaintext]:', HANDSHAKE_WATERMARK_MESSAGE);
+
+        const encryptedKey = rsaEncrypt(requesterPublicKey, handshakePayload);
+
         socket.emit('send_encrypted_room_key', {
           targetSocketId: requesterSocketId,
           encryptedKey,
@@ -222,76 +265,143 @@ export default function Chat({ user, onLogout }) {
 
         addHandshakeLog(
           'send',
-          `Đã mã hóa và gửi khóa phòng tới "${requesterUsername}" qua RSA E2EE.`
+          `Da gui khoa ma hoa toi "${requesterUsername}".`
         );
       } catch (err) {
-        console.error('[RSA Handshake] Lỗi khi mã hóa khóa phòng cho peer:', err);
-        addHandshakeLog('error', `Lỗi mã hóa khóa cho "${requesterUsername}": ${err.message}`);
+        console.error('[RSA Handshake] Loi ma hoa khoa phong:', err);
+        addHandshakeLog('error', `Loi ma hoa khoa cho "${requesterUsername}": ${err.message}`);
       }
     };
 
-    // Sự kiện 3: Người mới nhận thông báo đang chờ người cũ phân phối khóa
+    // Cho peer khac gui khoa phong
     const handleHandshakePending = ({ room: targetRoom, distributorUsername }) => {
       if (targetRoom !== room) return;
 
+      const existingKey = roomKeysRef.current[targetRoom] || getStoredRoomKey(targetRoom);
+      if (existingKey) {
+        setHandshakeState({
+          status: 'ready',
+          message: 'Khoa phong da san sang.',
+          isInitiator: false,
+          distributor: distributorUsername
+        });
+        return;
+      }
+
       setHandshakeState({
         status: 'pending',
-        message: `Đang chờ người cũ (${distributorUsername}) gửi khóa phòng qua RSA...`,
+        message: `Dang cho "${distributorUsername}" gui khoa phong...`,
         isInitiator: false,
         distributor: distributorUsername
       });
 
       addHandshakeLog(
         'wait',
-        `Đang chờ người cũ "${distributorUsername}" mã hóa và gửi khóa phòng...`
+        `Dang cho "${distributorUsername}" gui khoa phong...`
       );
+
+      if (handshakeTimeoutRef.current) {
+        clearTimeout(handshakeTimeoutRef.current);
+      }
+      handshakeTimeoutRef.current = setTimeout(() => {
+        const keyCheck = roomKeysRef.current[targetRoom] || getStoredRoomKey(targetRoom);
+        if (!keyCheck) {
+          addHandshakeLog('warn', `Timeout cho khoa tu "${distributorUsername}". Tu tao khoa.`);
+          const fallbackKey = generateAESKey(targetRoom);
+          saveStoredRoomKey(targetRoom, fallbackKey);
+          setRoomKeys((prev) => ({ ...prev, [targetRoom]: fallbackKey }));
+          setHandshakeState({
+            status: 'ready',
+            message: 'Khoa phong da duoc khoi tao (timeout fallback).',
+            isInitiator: true,
+            distributor: null
+          });
+        }
+      }, 4000);
     };
 
-    // Sự kiện 4: NGƯỜI MỚI nhận được khóa phòng đã mã hóa RSA từ NGƯỜI CŨ
+    // Nhan khoa phong da ma hoa RSA tu peer khac
     const handleReceiveEncryptedRoomKey = ({ encryptedKey, room: targetRoom, sender }) => {
       if (targetRoom !== room) return;
 
-      addHandshakeLog('receive', `Đã nhận gói khóa mã hóa từ "${sender}". Đang giải mã bằng RSA Private Key...`);
+      if (handshakeTimeoutRef.current) {
+        clearTimeout(handshakeTimeoutRef.current);
+        handshakeTimeoutRef.current = null;
+      }
+
+      addHandshakeLog('receive', `Nhan khoa ma hoa tu "${sender}". Dang giai ma...`);
 
       try {
-        // Giải mã bằng chính Private Key của mình
-        const decryptedAESKey = rsaDecrypt(rsaKeyPairRef.current.privateKey, encryptedKey);
+        const decryptedStr = rsaDecrypt(rsaKeyPairRef.current.privateKey, encryptedKey);
 
-        // Lưu bền vững vào localStorage và cập nhật state
+        let decryptedAESKey = decryptedStr;
+        let watermarkMsg = '';
+
+        try {
+          const parsedPayload = JSON.parse(decryptedStr);
+          if (parsedPayload && parsedPayload.key) {
+            decryptedAESKey = parsedPayload.key;
+            watermarkMsg = parsedPayload.message || '';
+          }
+        } catch {
+          decryptedAESKey = decryptedStr;
+        }
+
+        console.log('[Handshake Plaintext]:', watermarkMsg || HANDSHAKE_WATERMARK_MESSAGE);
+
         saveStoredRoomKey(targetRoom, decryptedAESKey);
         setRoomKeys((prev) => ({ ...prev, [targetRoom]: decryptedAESKey }));
 
         setHandshakeState({
           status: 'ready',
-          message: `Đã nhận và giải mã khóa phòng từ "${sender}" thành công!`,
+          message: `Da nhan khoa phong tu "${sender}".`,
           isInitiator: false,
           distributor: sender
         });
 
         addHandshakeLog(
           'receive',
-          `Bắt tay thành công! Đã lưu khóa phòng vào localStorage: ${decryptedAESKey.substring(0, 18)}...`
+          `Bat tay thanh cong voi "${sender}". Khoa phong: ${decryptedAESKey.substring(0, 18)}...`
         );
       } catch (err) {
-        console.error('[RSA Handshake] Lỗi giải mã khóa phòng:', err);
+        console.error('[RSA Handshake] Loi giai ma khoa phong:', err);
         setHandshakeState({
           status: 'error',
-          message: `Giải mã khóa phòng thất bại: ${err.message}`,
+          message: `Giai ma khoa phong that bai: ${err.message}`,
           isInitiator: false,
           distributor: sender
         });
-        addHandshakeLog('error', `Giải mã khóa phòng từ "${sender}" thất bại.`);
+        addHandshakeLog('error', `Giai ma khoa phong tu "${sender}" that bai.`);
       }
     };
 
-    // Sự kiện 5: Xóa toàn bộ tin nhắn trong phòng (Clear room messages)
-    const handleRoomMessagesCleared = ({ room: targetRoom, clearedBy }) => {
-      if (targetRoom === room) {
+    // Xu ly khi phong duoc reset
+    const handleRoomTestReset = ({ room: targetRoom, resetBy }) => {
+      if (!targetRoom || targetRoom === room) {
+        const target = targetRoom || room;
+        clearStoredRoomKey(target);
+        localStorage.removeItem(`roomResetId_${target}`);
+        setRoomKeys((prev) => {
+          const next = { ...prev };
+          delete next[target];
+          return next;
+        });
+
         setMessages([]);
+
+        setHandshakeState({
+          status: 'idle',
+          message: 'Phong da reset.',
+          isInitiator: false,
+          distributor: null
+        });
+
         addHandshakeLog(
           'info',
-          `Lịch sử tin nhắn phòng "${targetRoom}" đã được dọn sạch bởi "${clearedBy || 'thành viên'}".`
+          `Phong "${target}" da reset boi "${resetBy || 'thanh vien'}".`
         );
+
+        onLogout(`Phòng #${target} đã được reset tiến trình test bởi "${resetBy || 'thành viên'}".`);
       }
     };
 
@@ -303,9 +413,14 @@ export default function Chat({ user, onLogout }) {
     socket.on('req_room_key_distribution', handleReqRoomKeyDistribution);
     socket.on('handshake_pending', handleHandshakePending);
     socket.on('receive_encrypted_room_key', handleReceiveEncryptedRoomKey);
-    socket.on('room_messages_cleared', handleRoomMessagesCleared);
+    socket.on('room_test_reset', handleRoomTestReset);
+    socket.on('room_messages_cleared', handleRoomTestReset);
 
     return () => {
+      if (handshakeTimeoutRef.current) {
+        clearTimeout(handshakeTimeoutRef.current);
+        handshakeTimeoutRef.current = null;
+      }
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('room_history', handleRoomHistory);
@@ -315,33 +430,82 @@ export default function Chat({ user, onLogout }) {
       socket.off('req_room_key_distribution', handleReqRoomKeyDistribution);
       socket.off('handshake_pending', handleHandshakePending);
       socket.off('receive_encrypted_room_key', handleReceiveEncryptedRoomKey);
-      socket.off('room_messages_cleared', handleRoomMessagesCleared);
+      socket.off('room_test_reset', handleRoomTestReset);
+      socket.off('room_messages_cleared', handleRoomTestReset);
     };
   }, [user.username, room]);
 
-  // =========================================================================
-  // 🔗 KHỚP NỐI VỚI MODULE AES (DÀNH CHO LẬP TRÌNH VIÊN PHỤ TRÁCH MÃ HÓA ĐỐI XỨNG)
-  // =========================================================================
-  // Biến `activeRoomKey` chứa Mock Key (hoặc AES Session Key) được đồng bộ giữa các user.
-  // Khi module AES sẵn sàng:
-  // 1. Mã hóa văn bản và attachment với `activeRoomKey` trước khi emit `send_message`.
-  // 2. Khi nhận tin nhắn `receive_message`, giải mã bằng `activeRoomKey`.
-  // =========================================================================
+  // Ma hoa va gui tin nhan
+  const handleSendMessage = async ({ text, attachment }) => {
+    let key = activeRoomKey || getStoredRoomKey(room);
+    if (!key) {
+      key = generateAESKey(room);
+      saveStoredRoomKey(room, key);
+      setRoomKeys((prev) => ({ ...prev, [room]: key }));
+      setHandshakeState({
+        status: 'ready',
+        message: 'Khoa phong da san sang.',
+        isInitiator: true,
+        distributor: null
+      });
+    }
 
-  const handleSendMessage = ({ text, iv, attachment, isEncrypted }) => {
-    // Dẫn xuất HMAC Key từ khóa phòng và sinh chữ ký toàn vẹn HMAC-SHA256 trên Ciphertext
-    const { hmacKey } = deriveKeys(activeRoomKey);
-    const contentToSign = (text || '') + (attachment?.data || '');
-    const hmac = hmacKey && contentToSign ? generateHMAC(contentToSign, hmacKey) : null;
+    const hasText = Boolean(text && text.trim().length > 0);
+    const hasAttachment = Boolean(attachment && attachment.data);
+    if (!hasText && !hasAttachment) return;
+
+    let ciphertext = '';
+    let messageIV = null;
+
+    if (hasText) {
+      try {
+        const encResult = await encryptText(text.trim(), key);
+        ciphertext = encResult.ciphertext;
+        messageIV = encResult.iv;
+      } catch (err) {
+        console.error('[E2EE] Loi ma hoa van ban:', err);
+        alert('Lỗi mã hóa tin nhắn trước khi gửi.');
+        return;
+      }
+    }
+
+    let encryptedAttachment = null;
+    if (hasAttachment) {
+      try {
+        const encFileResult = await encryptText(attachment.data, key);
+        encryptedAttachment = {
+          name: attachment.name,
+          type: attachment.type,
+          size: attachment.size,
+          data: encFileResult.ciphertext,
+          iv: encFileResult.iv,
+          isEncrypted: true
+        };
+      } catch (err) {
+        console.error('[E2EE] Loi ma hoa tep:', err);
+        alert('Lỗi mã hóa tệp trước khi gửi.');
+        return;
+      }
+    }
+
+    // Tinh chu ky HMAC gom ca sender de chong spoofing
+    const { hmacKey } = deriveKeys(key);
+    const dataToSign = {
+      text: ciphertext || '',
+      iv: messageIV || null,
+      sender: user.username,
+      ...(encryptedAttachment?.data ? { attachment: encryptedAttachment.data } : {})
+    };
+    const hmac = hmacKey ? generateHMAC(dataToSign, hmacKey) : null;
 
     const messagePayload = {
       room,
       sender: user.username,
-      text: text || '',
-      iv: iv || null, // Vector khởi tạo AES-GCM
-      attachment: attachment || null,
-      isEncrypted: Boolean(isEncrypted),
-      hmac, // Chữ ký HMAC-SHA256 đảm bảo tính toàn vẹn thông điệp
+      text: ciphertext,
+      iv: messageIV,
+      attachment: encryptedAttachment,
+      isEncrypted: true,
+      hmac,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -354,12 +518,17 @@ export default function Chat({ user, onLogout }) {
     }
   };
 
-  const handleClearRoomMessages = () => {
+  const handleResetTestProcess = () => {
     const isConfirmed = window.confirm(
-      `Bạn có chắc chắn muốn xóa toàn bộ tin nhắn trong phòng #${room} không?\n\nThao tác này sẽ xóa sạch dữ liệu tin nhắn của phòng trên Server và cập nhật cho tất cả mọi người.`
+      `⚠️ BẠN CÓ CHẮC CHẮN MUỐN RESET TOÀN BỘ TIẾN TRÌNH TEST PHÒNG #${room} KHÔNG?\n\n` +
+      `Thao tác này sẽ thực hiện:\n` +
+      `1. Xóa sạch dữ liệu tin nhắn phòng #${room} trên Server.\n` +
+      `2. Hủy toàn bộ khóa đối xứng đã lưu (localStorage) của phòng này.\n` +
+      `3. Đăng xuất cả 2 người dùng khỏi phòng ngay lập tức.\n` +
+      `4. Tiến trình bắt tay phân phối khóa E2EE sẽ bắt đầu lại từ đầu khi người đầu tiên đăng nhập lại.`
     );
     if (isConfirmed) {
-      socket.emit('clear_room_messages', { room });
+      socket.emit('reset_room_test', { room });
     }
   };
 
@@ -374,8 +543,7 @@ export default function Chat({ user, onLogout }) {
         keyStatus={handshakeState}
         roomKey={activeRoomKey}
         onOpenKeyModal={() => setIsKeyModalOpen(true)}
-        onOpenDiagramModal={() => setIsDiagramModalOpen(true)}
-        onClearChat={handleClearRoomMessages}
+        onResetTest={handleResetTestProcess}
         roomUsers={roomUsers}
         roomUsersCount={roomUsers.filter((u) => u.status !== 'offline').length}
       />
@@ -395,7 +563,7 @@ export default function Chat({ user, onLogout }) {
         keyReady={isKeyReady}
       />
 
-      {/* Modal chi tiết khóa RSA, Mock Key & Handshake Timeline */}
+      {/* Modal chi tiết khóa RSA, Khóa AES & Handshake Timeline */}
       <KeyDetailsModal
         isOpen={isKeyModalOpen}
         onClose={() => setIsKeyModalOpen(false)}
@@ -406,12 +574,6 @@ export default function Chat({ user, onLogout }) {
         keyPair={rsaKeyPair}
         roomUsers={roomUsers}
         handshakeLogs={handshakeLogs}
-      />
-
-      {/* Modal sơ đồ luồng kiến trúc E2EE trực quan (Báo cáo Giảng viên) */}
-      <E2EEDiagramModal
-        isOpen={isDiagramModalOpen}
-        onClose={() => setIsDiagramModalOpen(false)}
       />
     </div>
   );

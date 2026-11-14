@@ -29,3 +29,11 @@ pnpm-debug.log*
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Report & Documentation Drafts (Nop bai chi gom README, srcs, refs)
+BaoCao_BTL1*
+HUONG_DAN_VE_VA_CHUP_ANH_BTL1.md
+latex/
+latex_project.zip
+README_files/
+README_new.doc

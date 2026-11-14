@@ -12,15 +12,15 @@ export default function MessageList({
 }) {
   const bottomRef = useRef(null);
 
-  // Dẫn xuất HMAC Key từ Room Key để kiểm tra tính toàn vẹn và phát hiện tấn công MitM
+  // HMAC key dan xuat tu roomKey
   const hmacKey = useMemo(() => {
     return roomKey ? deriveKeys(roomKey).hmacKey : '';
   }, [roomKey]);
 
-  // Bộ nhớ đệm lưu trữ kết quả giải mã AES: { [msgId]: { text, attachmentData, isDecrypted } }
+  // Cache tin nhan da giai ma
   const [decryptedCache, setDecryptedCache] = useState({});
 
-  // Tự động giải mã tin nhắn mới bằng roomKey (Khóa Vàng từ RSA Handshake)
+  // Giai ma tin nhan khi co roomKey
   useEffect(() => {
     let active = true;
 
@@ -30,11 +30,36 @@ export default function MessageList({
       for (const msg of messages) {
         if (msg.isSystem || decryptedCache[msg.id]?.isDecrypted) continue;
 
+        // Kiem tra HMAC
+        if (msg.hmac && hmacKey) {
+          const dataToVerify = {
+            text: msg.text || '',
+            iv: msg.iv || null,
+            sender: msg.sender,
+            ...(msg.attachment?.data ? { attachment: msg.attachment.data } : {})
+          };
+
+          const isHmacValid = verifyHMAC(dataToVerify, hmacKey, msg.hmac);
+          if (!isHmacValid) {
+            if (active) {
+              setDecryptedCache((prev) => ({
+                ...prev,
+                [msg.id]: {
+                  text: msg.text,
+                  attachmentData: msg.attachment?.data,
+                  isDecrypted: false,
+                  isHmacFailed: true
+                }
+              }));
+            }
+            continue;
+          }
+        }
+
         let plainText = msg.text;
         let plainAttachmentData = msg.attachment?.data;
         let isDecrypted = false;
 
-        // 1. Giải mã văn bản nếu có IV hoặc cờ isEncrypted
         if (msg.text && (msg.iv || msg.isEncrypted)) {
           const dec = await decryptText(msg.text, msg.iv, roomKey);
           if (dec !== null) {
@@ -43,7 +68,6 @@ export default function MessageList({
           }
         }
 
-        // 2. Giải mã tệp đính kèm Base64 nếu có mã hóa
         const attachmentIV = msg.attachment?.iv || msg.iv;
         if (msg.attachment?.data && (attachmentIV || msg.attachment?.isEncrypted)) {
           const decFile = await decryptText(msg.attachment.data, attachmentIV, roomKey);
@@ -118,24 +142,27 @@ export default function MessageList({
             );
           }
 
-          // Lấy dữ liệu đã giải mã AES từ cache (nếu có), fallback về bản gốc
           const cached = decryptedCache[msg.id];
-          const displayText = cached?.text ?? msg.text;
-          const displayAttachmentData = cached?.attachmentData ?? msg.attachment?.data;
 
-          // Kiểm tra phát hiện tấn công Giả mạo / Can thiệp dữ liệu (MitM) qua HMAC-SHA256
-          const rawContent = (msg.text || '') + (msg.attachment?.data || '');
+          const dataToVerify = {
+            text: msg.text || '',
+            iv: msg.iv || null,
+            sender: msg.sender,
+            ...(msg.attachment?.data ? { attachment: msg.attachment.data } : {})
+          };
           const isHmacFailed = Boolean(
-            msg.hmac && hmacKey && !verifyHMAC(rawContent, hmacKey, msg.hmac)
+            msg.hmac && hmacKey && !verifyHMAC(dataToVerify, hmacKey, msg.hmac)
           );
 
-          // Kiểm tra lỗi giải mã AES (khi tin nhắn có mã hóa nhưng giải mã thất bại do khóa sai hoặc ciphertext hỏng)
+          // Neu HMAC loi thi hien thi ciphertext goc
+          const displayText = isHmacFailed ? msg.text : (cached?.text ?? msg.text);
+          const displayAttachmentData = isHmacFailed ? null : (cached?.attachmentData ?? msg.attachment?.data);
+
           const isEncryptedMsg = Boolean(msg.iv || msg.isEncrypted);
           const isDecryptionFailed = Boolean(
-            isEncryptedMsg && roomKey && cached !== undefined && !cached.isDecrypted
+            !isHmacFailed && isEncryptedMsg && roomKey && cached !== undefined && !cached.isDecrypted
           );
 
-          // 2. Tin nhắn người dùng (phân chia Trái / Phải kèm Avatar và Chấm trạng thái)
           const isMe = msg.sender === currentUser;
           const senderMember = roomUsers?.find((u) => u.username === msg.sender);
           const senderStatus = senderMember?.status || 'offline';
@@ -151,26 +178,24 @@ export default function MessageList({
               {!isMe && (
                 <div
                   className="relative shrink-0 mb-5"
-                  title={`${msg.sender} (${
-                    senderStatus === 'online'
+                  title={`${msg.sender} (${senderStatus === 'online'
                       ? 'Đang trực tuyến'
                       : senderStatus === 'away'
-                      ? 'Away (Đang rời tab)'
-                      : 'Ngoại tuyến'
-                  })`}
+                        ? 'Away (Đang rời tab)'
+                        : 'Ngoại tuyến'
+                    })`}
                 >
                   <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary/30 to-periwinkle/30 border border-white/10 text-periwinkle flex items-center justify-center font-semibold text-xs shadow-sm">
                     {msg.sender?.charAt(0).toUpperCase()}
                   </div>
                   {/* Chấm tròn trạng thái: Xanh (Online), Vàng (Away), Đỏ (Offline) */}
                   <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-night ${
-                      senderStatus === 'online'
+                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-night ${senderStatus === 'online'
                         ? 'bg-emerald-400'
                         : senderStatus === 'away'
-                        ? 'bg-amber-400'
-                        : 'bg-rose-500'
-                    }`}
+                          ? 'bg-amber-400'
+                          : 'bg-rose-500'
+                      }`}
                   />
                 </div>
               )}
@@ -182,13 +207,12 @@ export default function MessageList({
                   <div className="flex items-center gap-1.5 mb-1 ml-1.5">
                     <span className="text-[11px] font-medium text-periwinkle">{msg.sender}</span>
                     <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded-full font-medium ${
-                        senderStatus === 'online'
+                      className={`text-[9px] px-1.5 py-0.2 rounded-full font-medium ${senderStatus === 'online'
                           ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
                           : senderStatus === 'away'
-                          ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
-                          : 'text-slate bg-white/5 border border-white/10'
-                      }`}
+                            ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                            : 'text-slate bg-white/5 border border-white/10'
+                        }`}
                     >
                       {senderStatus === 'online' ? 'Online' : senderStatus === 'away' ? 'Away' : 'Offline'}
                     </span>
@@ -197,15 +221,14 @@ export default function MessageList({
 
                 {/* Bong bóng tin nhắn */}
                 <div
-                  className={`relative px-4 py-2.5 break-words text-sm leading-relaxed transition-all w-full ${
-                    isHmacFailed
+                  className={`relative px-4 py-2.5 break-words text-sm leading-relaxed transition-all w-full ${isHmacFailed
                       ? 'bg-rose-950/40 border border-rose-500/60 text-rose-100 rounded-[20px] shadow-lg shadow-rose-950/50'
                       : isDecryptionFailed
-                      ? 'bg-amber-950/40 border border-amber-500/50 text-amber-100 rounded-[20px]'
-                      : isMe
-                      ? 'bg-primary text-white rounded-[20px] rounded-br-sm shadow-md shadow-primary/15'
-                      : 'bg-night-raised border border-white/10 text-on-dark rounded-[20px] rounded-bl-sm shadow-sm'
-                  }`}
+                        ? 'bg-amber-950/40 border border-amber-500/50 text-amber-100 rounded-[20px]'
+                        : isMe
+                          ? 'bg-primary text-white rounded-[20px] rounded-br-sm shadow-md shadow-primary/15'
+                          : 'bg-night-raised border border-white/10 text-on-dark rounded-[20px] rounded-bl-sm shadow-sm'
+                    }`}
                 >
                   {/* 1. Hiển thị nội dung văn bản (đã giải mã AES) */}
                   {displayText && <p className="whitespace-pre-wrap">{displayText}</p>}
@@ -243,11 +266,10 @@ export default function MessageList({
                         <a
                           href={displayAttachmentData}
                           download={msg.attachment.name}
-                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all group/file ${
-                            isMe
+                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all group/file ${isMe
                               ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white'
                               : 'bg-night border-white/10 hover:border-periwinkle/30 text-on-dark'
-                          }`}
+                            }`}
                           title={`Tải xuống: ${msg.attachment.name}`}
                         >
                           <div className="w-10 h-10 rounded-lg bg-primary/20 text-periwinkle flex items-center justify-center shrink-0 group-hover/file:scale-105 transition-transform">
@@ -268,9 +290,8 @@ export default function MessageList({
 
                 {/* Thông tin phụ: Thời gian gửi & Huy hiệu cảnh báo khi bị lỗi / MitM */}
                 <div
-                  className={`flex items-center gap-2 mt-1 text-[10px] text-slate ${
-                    isMe ? 'mr-1.5 flex-row-reverse' : 'ml-1.5'
-                  }`}
+                  className={`flex items-center gap-2 mt-1 text-[10px] text-slate ${isMe ? 'mr-1.5 flex-row-reverse' : 'ml-1.5'
+                    }`}
                 >
                   <span>{msg.timestamp}</span>
 
@@ -303,10 +324,10 @@ export default function MessageList({
                 <div
                   className="relative shrink-0 mb-5"
                   title={`${currentUser} (Bạn - ${myStatus === 'online'
-                      ? 'Đang trực tuyến'
-                      : myStatus === 'away'
-                        ? 'Away (Đang rời tab)'
-                        : 'Offline'
+                    ? 'Đang trực tuyến'
+                    : myStatus === 'away'
+                      ? 'Away (Đang rời tab)'
+                      : 'Offline'
                     })`}
                 >
                   <div className="w-8 h-8 rounded-full bg-primary/25 border border-primary/40 text-primary flex items-center justify-center font-semibold text-xs shadow-sm">
@@ -315,10 +336,10 @@ export default function MessageList({
                   {/* Chấm tròn trạng thái của mình */}
                   <span
                     className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-night ${myStatus === 'online'
-                        ? 'bg-emerald-400'
-                        : myStatus === 'away'
-                          ? 'bg-amber-400'
-                          : 'bg-rose-500'
+                      ? 'bg-emerald-400'
+                      : myStatus === 'away'
+                        ? 'bg-amber-400'
+                        : 'bg-rose-500'
                       }`}
                   />
                 </div>

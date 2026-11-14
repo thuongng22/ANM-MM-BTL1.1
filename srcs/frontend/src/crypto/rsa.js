@@ -1,17 +1,18 @@
 import JSEncrypt from 'jsencrypt';
+import CryptoJS from 'crypto-js';
 
-/**
- * Lấy hoặc sinh mới cặp khóa RSA (1024-bit) cho người dùng.
- * 1024-bit đảm bảo tốc độ sinh khóa tức thì (~50-100ms) trên trình duyệt không gây giật lag.
- * Lưu trữ bền vững trong localStorage theo username để không bị mất danh tính mã hóa khi F5 (Reload).
- */
+// MSSV thanh vien nhom
+export const TEAM_MSSV = ['2433220', '2410482', '2213078', '2252211'];
+
+// Thong diep khoi tao handshake
+export const HANDSHAKE_WATERMARK_MESSAGE = `Hello, We are ${TEAM_MSSV.join(', ')}`;
+
+// Lay hoac tao cap khoa RSA (1024-bit) luu trong localStorage
 export function getOrGenerateRSAKeyPair(username = 'anonymous') {
   const storageKey = `e2ee_rsa_keys_${username}`;
   try {
-    // 1. Ưu tiên đọc từ localStorage
     let saved = localStorage.getItem(storageKey);
 
-    // Hỗ trợ chuyển đổi từ sessionStorage cũ nếu có
     if (!saved && typeof sessionStorage !== 'undefined') {
       saved = sessionStorage.getItem(storageKey);
       if (saved) {
@@ -22,15 +23,13 @@ export function getOrGenerateRSAKeyPair(username = 'anonymous') {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.publicKey && parsed.privateKey) {
-        console.log(`[RSA] Sử dụng lại cặp khóa RSA lưu trong localStorage cho user "${username}"`);
         return parsed;
       }
     }
   } catch (e) {
-    console.warn('[RSA] Không thể đọc RSA key từ localStorage:', e);
+    console.warn('[RSA] Khong the doc khoa tu localStorage:', e);
   }
 
-  console.log(`[RSA] Đang sinh cặp khóa RSA 1024-bit mới cho user "${username}"...`);
   const crypt = new JSEncrypt({ default_key_size: 1024 });
   crypt.getKey();
   const publicKey = crypt.getPublicKey();
@@ -41,47 +40,33 @@ export function getOrGenerateRSAKeyPair(username = 'anonymous') {
   try {
     localStorage.setItem(storageKey, JSON.stringify(keyPair));
   } catch (e) {
-    console.warn('[RSA] Không thể lưu RSA key vào localStorage:', e);
+    console.warn('[RSA] Khong the luu khoa vao localStorage:', e);
   }
 
   return keyPair;
 }
 
-/**
- * Đọc Khóa phòng (Room AES Key) đã lưu trong localStorage của trình duyệt.
- * Định dạng lưu trữ: roomKey_<roomName> (ví dụ: roomKey_general).
- * @param {string} room - Tên phòng chat
- * @returns {string} Chuỗi Khóa phòng hoặc chuỗi rỗng
- */
+// Doc khoa phong tu localStorage
 export function getStoredRoomKey(room) {
   if (typeof window === 'undefined' || !room) return '';
   try {
     return localStorage.getItem(`roomKey_${room}`) || '';
   } catch (e) {
-    console.warn(`[RSA] Không thể đọc roomKey từ localStorage cho phòng "${room}":`, e);
     return '';
   }
 }
 
-/**
- * Lưu trữ Khóa phòng (Room AES Key) vào localStorage của trình duyệt.
- * @param {string} room - Tên phòng chat
- * @param {string} key - Chuỗi Khóa phòng (AES Key / Mock Key)
- */
+// Luu khoa phong vao localStorage
 export function saveStoredRoomKey(room, key) {
   if (typeof window === 'undefined' || !room || !key) return;
   try {
     localStorage.setItem(`roomKey_${room}`, key);
-    console.log(`[RSA] Đã lưu roomKey cho phòng "${room}" vào localStorage.`);
   } catch (e) {
-    console.warn(`[RSA] Không thể lưu roomKey vào localStorage cho phòng "${room}":`, e);
+    console.warn('[RSA] Khong the luu roomKey:', e);
   }
 }
 
-/**
- * Tải toàn bộ danh sách Khóa phòng đã lưu trong localStorage.
- * @returns {Record<string, string>} Đối tượng { [roomName]: roomKey }
- */
+// Lay danh sach khoa phong
 export function getAllStoredRoomKeys() {
   if (typeof window === 'undefined') return {};
   const keys = {};
@@ -97,94 +82,83 @@ export function getAllStoredRoomKeys() {
       }
     }
   } catch (e) {
-    console.warn('[RSA] Không thể nạp danh sách roomKey từ localStorage:', e);
+    console.warn('[RSA] Khong the nap danh sach roomKey:', e);
   }
   return keys;
 }
 
-/**
- * Xóa Khóa phòng khỏi localStorage.
- * @param {string} room - Tên phòng chat
- */
+// Xoa khoa phong
 export function clearStoredRoomKey(room) {
   if (typeof window === 'undefined' || !room) return;
   try {
     localStorage.removeItem(`roomKey_${room}`);
   } catch (e) {
-    console.warn(`[RSA] Không thể xóa roomKey khỏi localStorage cho phòng "${room}":`, e);
+    console.warn('[RSA] Khong the xoa roomKey:', e);
   }
 }
 
-/**
- * Mã hóa dữ liệu (như Room AES Key) bằng Public Key của người nhận (RSA PKCS#1 v1.5).
- * @param {string} recipientPublicKey - Khóa công khai của người nhận dạng PEM
- * @param {string} plaintext - Dữ liệu cần mã hóa (AES Key / Mock Key)
- * @returns {string} Chuỗi mã hóa Base64
- */
+// Ma hoa RSA (chia chunk neu payload dai hon 80 ky tu)
 export function rsaEncrypt(recipientPublicKey, plaintext) {
   if (!recipientPublicKey || !plaintext) {
-    throw new Error('Thiếu tham số cho hàm mã hóa RSA');
+    throw new Error('Thieu tham so ma hoa RSA');
   }
 
   const crypt = new JSEncrypt();
   crypt.setPublicKey(recipientPublicKey);
-  const encrypted = crypt.encrypt(plaintext);
 
-  if (!encrypted) {
-    throw new Error('Mã hóa RSA thất bại (chuỗi quá dài hoặc Public Key không hợp lệ)');
+  // RSA 1024-bit PKCS#1 v1.5 gioi han do dai plaintext nen chia chunk
+  const maxChunkLength = 80;
+  if (plaintext.length <= maxChunkLength) {
+    const encrypted = crypt.encrypt(plaintext);
+    if (!encrypted) {
+      throw new Error('Ma hoa RSA that bai');
+    }
+    return encrypted;
   }
-  return encrypted;
+
+  const chunks = [];
+  for (let i = 0; i < plaintext.length; i += maxChunkLength) {
+    const chunk = plaintext.slice(i, i + maxChunkLength);
+    const encChunk = crypt.encrypt(chunk);
+    if (!encChunk) {
+      throw new Error('Ma hoa RSA that bai o chunk');
+    }
+    chunks.push(encChunk);
+  }
+  return chunks.join('|');
 }
 
-/**
- * Giải mã dữ liệu (Base64) bằng Private Key của chính mình.
- * @param {string} myPrivateKey - Khóa riêng của bản thân dạng PEM
- * @param {string} ciphertext - Chuỗi mã hóa Base64 nhận được từ mạng
- * @returns {string} Chuỗi plaintext ban đầu (AES Key)
- */
+// Giai ma RSA theo tung chunk cach nhau boi '|'
 export function rsaDecrypt(myPrivateKey, ciphertext) {
   if (!myPrivateKey || !ciphertext) {
-    throw new Error('Thiếu tham số cho hàm giải mã RSA');
+    throw new Error('Thieu tham so giai ma RSA');
   }
 
   const crypt = new JSEncrypt();
   crypt.setPrivateKey(myPrivateKey);
-  const decrypted = crypt.decrypt(ciphertext);
 
-  if (!decrypted) {
-    throw new Error('Giải mã RSA thất bại (Private Key không khớp hoặc Ciphertext không hợp lệ)');
-  }
-  return decrypted;
-}
-
-/**
- * Sinh Mock AES Key ngẫu nhiên chuẩn 256-bit (32 byte hex).
- * Biến này đại diện cho khóa đối xứng bí mật của phòng chat (Room Shared Key).
- */
-export function generateMockAESKey() {
-  const hexChars = '0123456789abcdef';
-  let randomHex = '';
-  // Sử dụng window.crypto nếu có sẵn, hoặc Math.random làm fallback an toàn
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-    const bytes = new Uint8Array(16);
-    window.crypto.getRandomValues(bytes);
-    randomHex = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  } else {
-    for (let i = 0; i < 32; i++) {
-      randomHex += hexChars.charAt(Math.floor(Math.random() * hexChars.length));
+  const chunks = ciphertext.split('|');
+  let decryptedText = '';
+  for (const chunk of chunks) {
+    const plainChunk = crypt.decrypt(chunk);
+    if (!plainChunk) {
+      throw new Error('Giai ma RSA that bai');
     }
+    decryptedText += plainChunk;
   }
-  return `aes_key_${randomHex}`;
+  return decryptedText;
 }
 
-/**
- * Rút gọn chuỗi PEM hoặc lấy Fingerprint hiển thị gọn gàng trên giao diện UI
- */
+// Sinh khoa phong tu MSSV cac thanh vien bang SHA256
+export function generateAESKey(room = '') {
+  const mssvConcat = TEAM_MSSV.join('_');
+  const seed = room ? `${mssvConcat}_${room}` : mssvConcat;
+  return CryptoJS.SHA256(seed).toString(CryptoJS.enc.Hex);
+}
+
+// Lay fingerprint rut gon cua public key de hien thi UI
 export function getPublicKeyFingerprint(pem) {
   if (!pem) return 'N/A';
-  // Lấy dòng dữ liệu Base64 bỏ header/footer
   const clean = pem.replace(/-----[^\n]+-----|\n|\r|\s/g, '');
   if (clean.length <= 16) return clean;
   return `${clean.substring(0, 8)}...${clean.substring(clean.length - 8)}`;

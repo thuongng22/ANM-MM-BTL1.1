@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Shield, ArrowRight, Lock, User, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Shield, ArrowRight, Lock, User, Eye, EyeOff, CheckCircle2, AlertCircle, RotateCcw } from 'lucide-react';
 
-export default function Auth({ onLoginSuccess }) {
+export default function Auth({ onLoginSuccess, notice }) {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -100,32 +100,35 @@ export default function Auth({ onLoginSuccess }) {
           <h2 className="text-2xl sm:text-3xl font-normal text-on-dark tracking-tight">
             E2EE Messenger
           </h2>
-          <p className="text-fog text-sm mt-1.5 font-light">
-            Nền tảng giao tiếp bảo mật và tức thì
-          </p>
         </div>
+
+        {/* Thông báo khi phiên test bị reset */}
+        {notice && (
+          <div className="mb-6 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs text-center flex items-center justify-center gap-2 animate-fadeIn shadow-sm">
+            <RotateCcw className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="leading-relaxed">{notice}</span>
+          </div>
+        )}
 
         {/* Tab Toggle: Đăng nhập / Đăng ký */}
         <div className="flex bg-night/80 border border-white/10 rounded-full p-1 mb-6">
           <button
             type="button"
             onClick={() => handleToggleMode(false)}
-            className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-full transition-all ${
-              !isRegisterMode
+            className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-full transition-all ${!isRegisterMode
                 ? 'bg-primary text-white shadow-md shadow-primary/20'
                 : 'text-fog hover:text-on-dark'
-            }`}
+              }`}
           >
             Đăng nhập
           </button>
           <button
             type="button"
             onClick={() => handleToggleMode(true)}
-            className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-full transition-all ${
-              isRegisterMode
+            className={`flex-1 py-2 text-xs sm:text-sm font-medium rounded-full transition-all ${isRegisterMode
                 ? 'bg-primary text-white shadow-md shadow-primary/20'
                 : 'text-fog hover:text-on-dark'
-            }`}
+              }`}
           >
             Đăng ký
           </button>

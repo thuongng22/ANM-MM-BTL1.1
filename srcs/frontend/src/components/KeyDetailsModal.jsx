@@ -118,12 +118,12 @@ export default function KeyDetailsModal({
             </div>
           </div>
 
-          {/* Section 1: Room Mock AES Key */}
+          {/* Section 1: Room AES Session Key */}
           <div className="bg-night/60 border border-white/5 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-xs font-medium text-periwinkle">
                 <Key className="w-4 h-4" />
-                <span>Khóa Đối Xứng Phòng Chat (Mock AES Key)</span>
+                <span>Khóa Đối Xứng Phòng Chat (AES-256 Session Key)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <button
@@ -193,9 +193,7 @@ export default function KeyDetailsModal({
             )}
 
             <p className="text-[11px] text-slate mt-2">
-              💡 <span className="text-fog">Dành cho module AES:</span> Biến này được phân phối
-              ngầm qua RSA. Lập trình viên mã hóa AES chỉ cần truyền biến này vào hàm mã
-              hóa/giải mã tin nhắn.
+              <span className="text-fog font-medium">Lưu ý:</span> Khóa phiên đối xứng AES-256 được đồng bộ qua giao thức RSA E2EE giữa các thành viên để mã hóa và giải mã tin nhắn & tệp đính kèm.
             </p>
           </div>
 
@@ -282,16 +280,23 @@ export default function KeyDetailsModal({
               {roomUsers.length === 0 ? (
                 <div className="p-3 text-xs text-slate text-center">Chưa có thành viên trực tuyến</div>
               ) : (
-                roomUsers.map((u) => {
+                roomUsers.map((u, index) => {
                   const isCurrent = u.username === username;
                   return (
                     <div
-                      key={u.socketId}
+                      key={u.socketId || `${u.username || "user"}_${index}`}
                       className="p-3 flex items-center justify-between text-xs hover:bg-white/[0.02]"
                     >
                       <div className="flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">
-                          {u.username?.charAt(0).toUpperCase()}
+                        <div className="relative">
+                          <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">
+                            {u.username?.charAt(0).toUpperCase()}
+                          </div>
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-night ${
+                              u.status === 'online' ? 'bg-emerald-400' : u.status === 'away' ? 'bg-amber-400' : 'bg-rose-500'
+                            }`}
+                          />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
@@ -301,9 +306,20 @@ export default function KeyDetailsModal({
                                 Bạn
                               </span>
                             )}
+                            <span
+                              className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
+                                u.status === 'online'
+                                  ? 'text-emerald-400 bg-emerald-500/10'
+                                  : u.status === 'away'
+                                  ? 'text-amber-400 bg-amber-500/10'
+                                  : 'text-slate bg-white/5'
+                              }`}
+                            >
+                              {u.status === 'online' ? 'Online' : u.status === 'away' ? 'Away' : 'Offline'}
+                            </span>
                           </div>
                           <span className="text-[10px] font-mono text-slate">
-                            ID: {u.socketId.substring(0, 10)}...
+                            {u.socketId ? `ID: ${u.socketId.substring(0, 10)}...` : 'Phiên: Ngoại tuyến (Offline)'}
                           </span>
                         </div>
                       </div>

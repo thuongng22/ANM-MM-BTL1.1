@@ -1,7 +1,7 @@
 {
   "name": "chat-e2ee-backend",
   "version": "1.0.0",
-  "description": "Backend Socket.io server for Encrypted Chat App (Day 1-2 Plaintext)",
+  "description": "Backend Socket.io server for Encrypted Chat App (E2EE)",
   "main": "server.js",
   "type": "module",
   "scripts": {

@@ -240,12 +240,10 @@ io.on('connection', (socket) => {
     // Đọc lịch sử tin nhắn của phòng từ database.json
     const db = readDatabase();
     const roomMessages = db.messages.filter((msg) => msg.room === room);
+    const currentResetId = db.roomResetIds?.[room] || 'initial';
 
-    // Gửi toàn bộ lịch sử tin nhắn kèm attachment cho socket vừa vào
-    socket.emit('room_history', roomMessages);
-
-    // Lấy danh sách thành viên đã có mặt trước đó trong phòng
-    const existingMembers = getRoomMembers(room).filter(m => m.socketId !== socket.id);
+    // Gửi toàn bộ lịch sử tin nhắn kèm attachment và resetId cho socket vừa vào
+    socket.emit('room_history', { messages: roomMessages, resetId: currentResetId });
 
     // Phát danh sách toàn bộ thành viên phòng hiện tại cho mọi người trong phòng
     io.to(room).emit('room_users', getRoomMembers(room));
@@ -267,22 +265,26 @@ io.on('connection', (socket) => {
       });
     }
 
-    // --- LUỒNG BẮT TAY TRAO ĐỔI KHÓA RSA (RSA HANDSHAKE PROTOCOL) ---
-    if (existingMembers.length === 0) {
-      // Trường hợp A: Phòng chưa có ai => User này là NGƯỜI ĐẦU TIÊN (Key Initiator)
-      console.log(`[Handshake] "${username}" là người đầu tiên trong phòng "${room}". Yêu cầu khởi tạo khóa phòng.`);
+    // Trao doi khoa phong RSA
+    const onlineDistributors = [];
+    for (const [id, s] of activeSockets.entries()) {
+      if (s.room === room && id !== socket.id && s.publicKey) {
+        onlineDistributors.push(s);
+      }
+    }
+    onlineDistributors.sort((a, b) => a.joinedAt - b.joinedAt);
+
+    if (onlineDistributors.length === 0) {
+      console.log(`[Handshake] "${username}" là thành viên online duy nhất trong phòng "${room}".`);
       socket.emit('init_room_key_holder', {
         room,
         isInitiator: true,
-        message: 'Bạn là thành viên đầu tiên. Khóa phòng sẽ được khởi tạo tự động.'
+        message: 'Bạn là thành viên trực tuyến duy nhất. Khóa phòng được kích hoạt.'
       });
     } else {
-      // Trường hợp B: Phòng ĐÃ CÓ người cũ => Người cũ gửi khóa cho người mới
-      // Chọn người có mặt lâu nhất trong phòng làm distributor
-      const distributor = existingMembers[0];
-      console.log(`[Handshake] "${username}" tham gia phòng "${room}". Yêu cầu người cũ "${distributor.username}" phân phối khóa phòng.`);
+      const distributor = onlineDistributors[0];
+      console.log(`[Handshake] "${username}" tham gia phòng "${room}". Yêu cầu "${distributor.username}" gửi khóa.`);
 
-      // Gửi yêu cầu phân phối khóa tới người cũ
       io.to(distributor.socketId).emit('req_room_key_distribution', {
         requesterSocketId: socket.id,
         requesterUsername: username,
@@ -290,22 +292,20 @@ io.on('connection', (socket) => {
         room
       });
 
-      // Báo cho người mới biết đang chờ nhận khóa
       socket.emit('handshake_pending', {
         room,
         distributorUsername: distributor.username,
-        message: `Đang chờ người cũ (${distributor.username}) gửi khóa phòng đã mã hóa RSA...`
+        message: `Đang chờ thành viên trực tuyến (${distributor.username}) gửi khóa phòng đã mã hóa RSA...`
       });
     }
   });
 
-  // 2. Chuyển tiếp Khóa phòng đã được mã hóa RSA từ Người cũ sang Người mới (E2EE Relay)
+  // Chuyen tiep khoa da ma hoa RSA
   socket.on('send_encrypted_room_key', ({ targetSocketId, encryptedKey, room, sender }) => {
     if (!targetSocketId || !encryptedKey) return;
 
-    console.log(`[Handshake] Chuyển tiếp khóa phòng mã hóa từ "${sender}" tới target "${targetSocketId}" trong phòng "${room}".`);
+    console.log(`[Handshake] Chuyển tiếp khóa phòng mã hóa từ "${sender}" tới "${targetSocketId}".`);
 
-    // Server chỉ chuyển tiếp Ciphertext, hoàn toàn KHÔNG THỂ giải mã nội dung vì không có Private Key
     io.to(targetSocketId).emit('receive_encrypted_room_key', {
       encryptedKey,
       room,
@@ -317,20 +317,34 @@ io.on('connection', (socket) => {
   socket.on('request_room_key_refresh', ({ room }) => {
     const session = activeSockets.get(socket.id);
     if (!session) return;
-    const existingMembers = getRoomMembers(room).filter(m => m.socketId !== socket.id);
-    if (existingMembers.length > 0) {
-      const distributor = existingMembers[0];
+    
+    // Tìm các thành viên đang online thực sự (socketId hợp lệ, có publicKey)
+    const onlineDistributors = [];
+    for (const [id, s] of activeSockets.entries()) {
+      if (s.room === room && id !== socket.id && s.publicKey) {
+        onlineDistributors.push(s);
+      }
+    }
+    onlineDistributors.sort((a, b) => a.joinedAt - b.joinedAt);
+
+    if (onlineDistributors.length > 0) {
+      const distributor = onlineDistributors[0];
       io.to(distributor.socketId).emit('req_room_key_distribution', {
         requesterSocketId: socket.id,
         requesterUsername: session.username,
         requesterPublicKey: session.publicKey,
         room
       });
+      socket.emit('handshake_pending', {
+        room,
+        distributorUsername: distributor.username,
+        message: `Đang chờ thành viên trực tuyến (${distributor.username}) gửi lại khóa phòng...`
+      });
     } else {
       socket.emit('init_room_key_holder', {
         room,
         isInitiator: true,
-        message: 'Không có thành viên khác. Tự tạo khóa phòng mới.'
+        message: 'Không có thành viên trực tuyến khác. Tự tạo khóa phòng mới.'
       });
     }
   });
@@ -378,23 +392,58 @@ io.on('connection', (socket) => {
     io.to(room).emit('receive_message', formattedMessage);
   });
 
-  // 5. Xóa toàn bộ tin nhắn trong phòng chat (Clear room messages)
-  socket.on('clear_room_messages', ({ room }) => {
+  // Reset phong chat
+  socket.on('reset_room_test', ({ room }) => {
     if (!room) return;
     const session = activeSockets.get(socket.id);
     const username = session?.username || 'Người dùng';
 
     const db = readDatabase();
     db.messages = db.messages.filter((msg) => msg.room !== room);
+
+    for (const record of Array.from(roomJoinedHistory)) {
+      if (record.startsWith(`${room}:`)) {
+        roomJoinedHistory.delete(record);
+      }
+    }
+    db.joinedHistory = Array.from(roomJoinedHistory);
+
+    db.roomResetIds = db.roomResetIds || {};
+    db.roomResetIds[room] = `reset_${Date.now()}`;
     writeDatabase(db);
 
-    console.log(`[Chat] "${username}" đã xóa toàn bộ lịch sử tin nhắn trong phòng "${room}".`);
+    console.log(`[Reset Test] "${username}" da reset phong "${room}".`);
 
-    // Phát thông báo xóa tin nhắn tới toàn bộ thành viên trong phòng
-    io.to(room).emit('room_messages_cleared', {
+    io.emit('room_test_reset', {
       room,
-      clearedBy: username
+      resetBy: username
     });
+
+    for (const [id, s] of activeSockets.entries()) {
+      if (s.room === room) {
+        userStatuses.set(s.username, 'offline');
+        activeSockets.delete(id);
+      }
+    }
+  });
+
+  // Hỗ trợ sự kiện cũ clear_room_messages (tự động chuyển sang reset_room_test)
+  socket.on('clear_room_messages', ({ room }) => {
+    const session = activeSockets.get(socket.id);
+    const username = session?.username || 'Người dùng';
+    const db = readDatabase();
+    db.messages = db.messages.filter((msg) => msg.room !== room);
+    for (const record of Array.from(roomJoinedHistory)) {
+      if (record.startsWith(`${room}:`)) {
+        roomJoinedHistory.delete(record);
+      }
+    }
+    db.joinedHistory = Array.from(roomJoinedHistory);
+    db.roomResetIds = db.roomResetIds || {};
+    db.roomResetIds[room] = `reset_${Date.now()}`;
+    writeDatabase(db);
+
+    io.to(room).emit('room_test_reset', { room, resetBy: username });
   });
 
   // 6. Cập nhật trạng thái người dùng (online, away, offline)
@@ -424,7 +473,7 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log('\n  🚀 Hệ thống E2EE Chat đã sẵn sàng:');
-  console.log(`  ➜  Giao diện Web (Frontend):  http://localhost:5173/`);
-  console.log(`  ➜  Máy chủ Relay (Backend):   http://localhost:${PORT}/ (0.0.0.0 LAN Ready)\n`);
+  console.log(`\n  Server listening on port ${PORT}:`);
+  console.log(`  Frontend: http://localhost:5173/`);
+  console.log(`  Backend:  http://localhost:${PORT}/ (0.0.0.0)\n`);
 });

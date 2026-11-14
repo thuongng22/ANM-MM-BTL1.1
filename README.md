@@ -1,96 +1,90 @@
-# E2EE Chat - Ứng dụng Chat Realtime Mã hóa Đầu cuối
+# E2EE Chat - Ứng dụng Chat Realtime Mã hóa Đầu cuối (End-to-End Encryption)
 
-[![Node.js](https://img.shields.io/badge/Node.js-v18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-v19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-v8-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Socket.io](https://img.shields.io/badge/Socket.io-v4.8-010101?logo=socket.io&logoColor=white)](https://socket.io/)
-[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v3.4-38B2AC?logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-**E2EE Chat** là ứng dụng nhắn tin thời gian thực (Realtime Chat Application) client-server, được xây dựng theo kiến trúc hiện đại với giao diện Dark Mode tối giản, chuyên nghiệp. 
-
-Hệ thống hỗ trợ xác thực tài khoản, phân chia phòng chat linh hoạt, lưu trữ và tải lại lịch sử tin nhắn tự động từ tệp tin JSON thông qua Node.js `fs`, cùng khả năng truyền tải hình ảnh và tệp tài liệu trực tiếp dưới dạng chuỗi Base64 qua WebSocket.
+Ứng dụng chat Khách - Chủ (Client-Server) thời gian thực hỗ trợ mã hóa đầu cuối (**End-to-End Encryption - E2EE**), phân phối Khóa phòng qua hệ mật bất đối xứng **RSA 1024-bit**, mã hóa nội dung tin nhắn và tệp tin qua **AES-256-GCM**, và xác thực toàn vẹn bằng **HMAC-SHA256** theo mô hình **Zero-Knowledge Relay Server**.
 
 ---
 
-## 🌟 Tính năng nổi bật
+## 1. Tính năng chính
 
-- **Giao diện Dark Mode tối giản**: Thiết kế hiện đại, trực quan, tối ưu trải nghiệm người dùng với bố cục rõ ràng và phông chữ sắc nét.
-- **Hệ thống Đăng nhập / Đăng ký**: Hỗ trợ tạo tài khoản và đăng nhập với cơ chế lưu trữ bảo đảm qua REST API (`/api/register`, `/api/login`).
-- **Lưu trữ JSON Database (`fs`)**: Dữ liệu người dùng và toàn bộ tin nhắn được ghi nhận bền vững vào file `backend/database.json`.
-- **Nhắn tin thời gian thực (Socket.io)**: Kết nối hai chiều với độ trễ cực thấp giữa các client, tự động nhận biết trạng thái kết nối trực tuyến/mất kết nối.
-- **Tự động khôi phục lịch sử**: Khi người dùng vào hoặc đổi phòng (`join_room`), toàn bộ tin nhắn cũ của phòng đó được nạp lại tự động (`room_history`).
-- **Truyền tệp đính kèm (Media & File Transfer)**:
-  - **Hình ảnh (`image/*`)**: Xem ảnh trực tiếp (inline preview) trong bong bóng chat kèm kích thước và tên tệp.
-  - **Tài liệu (PDF, Word, TXT, ZIP...)**: Hiển thị dưới dạng thẻ tải về tiện lợi, bấm để tải ngay về máy tính.
-- **Bộ điều phối khởi chạy một lệnh (Single Command Runner)**: Điều phối song song cả Backend và Frontend qua `concurrently`, hỗ trợ an toàn ký tự đặc biệt trên hệ điều hành Windows.
+- **Mã hóa đầu cuối (E2EE):** Toàn bộ tin nhắn văn bản và tệp đa phương tiện được mã hóa AES-256 với Vector khởi tạo ($IV$) ngẫu nhiên cho từng gói tin ngay tại trình duyệt của người gửi trước khi truyền lên mạng.
+- **Trao đổi Khóa phòng RSA (1024-bit) & Watermarking MSSV:** Các thành viên trong phòng thống nhất Khóa phòng đối xứng qua kênh mạng công cộng bằng thuật toán RSA; nhúng mã số sinh viên (MSSV) và thông điệp đóng dấu bản quyền nhóm vào gói tin bắt tay; Máy chủ trung chuyển hoàn toàn không nắm giữ khóa (Zero-Knowledge).
+- **Xác thực toàn vẹn & Chống giả mạo (HMAC-SHA256):** Gắn chữ ký HMAC trên bản mã và danh tính người gửi theo chuẩn RFC 2104, giúp phát hiện và ngăn chặn triệt để tấn công kẻ đứng giữa (MitM) sửa đổi dữ liệu và tấn công giả mạo người gửi (Spoofing).
+- **Truyền tệp tin đa phương tiện:** Hỗ trợ truyền hình ảnh (xem trước trực tiếp - inline preview) và tệp tài liệu (PDF, Word, TXT...) với dung lượng lên đến 25MB dưới dạng Base64 đã mã hóa.
+- **Đối soát khóa & Handshake Timeline:** Hộp thoại trực quan (KeyDetailsModal) cho phép kiểm tra cặp khóa RSA cá nhân, Khóa phòng AES tất định và dòng thời gian chi tiết các bước bắt tay.
+- **Reset tiến trình test:** Hỗ trợ dọn sạch dữ liệu phòng chat trong cơ sở dữ liệu và đồng bộ đăng xuất người dùng để kiểm thử lại chu trình bắt tay từ đầu một cách thuận tiện.
+- **Xác thực tài khoản:** Đăng ký, đăng nhập và lưu trữ bền vững trên cơ sở dữ liệu JSON (`database.json`).
 
 ---
 
-## 🏗️ Kiến trúc & Công nghệ (Tech Stack)
+## 2. Kiến trúc & Công nghệ
 
-| Thành phần | Công nghệ | Phiên bản | Vai trò |
-| :--- | :--- | :--- | :--- |
-| **Frontend Framework** | React | `^19.3.1` | Xây dựng giao diện Single Page Application (SPA) |
-| **Build Tool** | Vite | `^8.3.4` | Hot Module Replacement (HMR), build siêu tốc |
-| **Styling** | Tailwind CSS | `^3.4.17` | Utility-first CSS thiết kế Dark Mode tối giản |
-| **Icon Set** | Lucide React | `^1.16.0` | Bộ biểu tượng vector tối giản, sắc nét |
-| **Backend Runtime** | Node.js | `>= 18` | Môi trường thực thi JavaScript phía máy chủ |
-| **Web Server** | Express | `^4.21.2` | Xử lý REST API endpoints và Middleware |
-| **Realtime Engine** | Socket.io | `^4.8.1` | Giao thức WebSocket truyền tin nhắn và tệp hai chiều |
-| **Database** | Node.js File System (`fs`) | Built-in | Đọc/ghi dữ liệu vào `database.json` |
-| **Dev Orchestration** | Concurrently | `^9.1.2` | Chạy đồng thời Backend và Frontend trên cùng 1 terminal |
+| Thành phần | Công nghệ / Thư viện | Phiên bản | Vai trò |
+| :--- | :--- | :---: | :--- |
+| **Frontend Framework** | React | `^19.3.1` | Xây dựng giao diện ứng dụng web đơn trang (SPA) |
+| **Build Tool** | Vite | `^8.3.4` | Build và máy chủ phát triển cục bộ |
+| **Mật mã bất đối xứng** | jsencrypt | `^3.5.4` | Sinh cặp khóa RSA 1024-bit và mã hóa/giải mã gói tin bắt tay |
+| **Mật mã đối xứng & Hash** | crypto-js | `^4.2.0` | Mã hóa AES, tính mã HMAC-SHA256 và hàm băm SHA-256 |
+| **Giao diện & Icon** | Tailwind CSS / Lucide React | `^3.4.17` / `^1.16.0` | Định kiểu giao diện Dark Mode và hệ thống icon |
+| **Backend Runtime** | Node.js | `>= 18` | Môi trường thực thi phía máy chủ |
+| **Web Server** | Express | `^4.21.2` | REST API đăng ký, đăng nhập tài khoản |
+| **Realtime Engine** | Socket.io | `^4.8.1` | WebSocket Relay Server chuyển tiếp bản mã và sự kiện phòng |
+| **Database** | Node.js File System (`fs`) | Built-in | Lưu trữ người dùng và bản mã tin nhắn vào `database.json` |
+| **Điều phối khởi chạy** | Concurrently | `^9.1.2` | Chạy đồng thời Backend và Frontend trên một terminal duy nhất |
 
 ---
 
-## 📁 Cấu trúc thư mục dự án (Tuân thủ Quy chế BTL)
+## 3. Cấu trúc thư mục dự án
 
 ```text
-Assigment1/ (hoặc ANM&MM/)
-├── README.doc                 # Tài liệu hướng dẫn cài đặt & sử dụng hệ thống (Định dạng Word)
-├── README.md                  # Hướng dẫn sử dụng & tổng quan hệ thống (Markdown)
+ANM&MM/
+├── README.doc                 # Tài liệu hướng dẫn sử dụng hệ thống (Định dạng Word)
+├── README.md                  # Hướng dẫn sử dụng và tổng quan hệ thống (Markdown)
+├── BaoCao_BTL1.pdf            # Báo cáo kỹ thuật Bài tập lớn số 1
 │
-├── srcs/                      # TOÀN BỘ MÃ NGUỒN HIỆN THỰC CỦA HỆ THỐNG
-│   ├── package.json           # Điều phối chạy đồng thời cả Backend và Frontend qua concurrently
+├── srcs/                      # TOÀN BỘ MÃ NGUỒN CHƯƠNG TRÌNH
+│   ├── package.json           # Điều phối script chạy đồng thời Backend và Frontend
 │   ├── package-lock.json
-│   ├── backend/               # Môi trường Máy chủ (Node.js Express & Socket.io)
+│   ├── backend/               # Server Node.js Express & Socket.io (Port 5000)
 │   │   ├── package.json       # Dependencies: express, socket.io, cors
-│   │   ├── database.json      # Cơ sở dữ liệu JSON: { "users": [], "messages": [] }
-│   │   └── server.js          # REST API xác thực & Socket.io Relay Server (E2EE Zero Knowledge)
-│   ├── frontend/              # Môi trường Giao diện (React 19, Vite, Tailwind CSS)
-│   │   ├── package.json       # Dependencies: react, socket.io-client, jsencrypt, crypto-js...
-│   │   ├── vite.config.js     # Cấu hình Vite Dev Server (hỗ trợ LAN host)
-│   │   ├── index.html         # Entry HTML
-│   │   └── src/
-│   │       ├── crypto/        # Module mã hóa: RSA Handshake (rsa.js), HMAC-SHA256 (hmac.js)
-│   │       ├── services/      # AES-256-GCM Web Crypto Service (aes_service.js)
-│   │       ├── components/    # Giao diện Chat, Auth, Modal Sơ đồ E2EE & Khóa
-│   │       └── socket.js      # Socket.io client singleton
-│   └── docs/                  # Tài liệu thiết kế kỹ thuật nội bộ (Architecture, Design Tokens...)
+│   │   ├── database.json      # Cơ sở dữ liệu JSON lưu người dùng và bản mã tin nhắn
+│   │   └── server.js          # REST API & Socket.io Relay Server (Zero-Knowledge)
+│   └── frontend/              # Ứng dụng Web Client (React 19, Vite, Tailwind CSS)
+│       ├── package.json       # Dependencies: react, socket.io-client, jsencrypt, crypto-js...
+│       ├── vite.config.js     # Cấu hình Vite Dev Server
+│       ├── index.html         # Entry HTML
+│       └── src/
+│           ├── crypto/        # Module mật mã: rsa.js, hmac.js
+│           ├── services/      # Module mã hóa đối xứng: aes_service.js
+│           ├── components/    # Giao diện Chat, Auth, Header, KeyDetailsModal...
+│           └── socket.js      # Socket.io client singleton
 │
-└── refs/                      # TÀI LIỆU VÀ MÃ NGUỒN MỞ THAM KHẢO & SỬ DỤNG
-    ├── DANH_MUC_TAI_LIEU_THAM_KHAO.md    # Danh mục tổng hợp tài liệu, sách, tiêu chuẩn quốc tế
-    ├── libraries/                        # Danh mục thư viện mã nguồn mở & giấy phép sử dụng
-    ├── rfcs/                             # Tóm tắt các tiêu chuẩn RFC (RFC 5116, 3447, 2104, 6455)
-    └── mitm_testing/                     # Hướng dẫn bắt gói tin Wireshark & kiểm thử tấn công MitM
+└── refs/                      # TÀI LIỆU VÀ MÃ NGUỒN MỞ THAM KHẢO
+    ├── DANH_MUC_TAI_LIEU_THAM_KHAO.md    # Danh mục tổng hợp giáo trình và tài liệu tham khảo
+    ├── libraries/                        # Danh mục thư viện mã nguồn mở và giấy phép
+    │   └── THU_VIEN_MA_NGUON_MO.md
+    └── rfcs/                             # Tóm tắt các tiêu chuẩn RFC (RFC 5116, 3447, 2104, 6455)
+        ├── RFC2104_HMAC.md
+        ├── RFC3447_RSA_PKCS1_v2_1.md
+        ├── RFC5116_AES_GCM_AEAD.md
+        └── RFC6455_WebSocket.md
 ```
 
 ---
 
-## 🔌 Danh sách các cổng mạng (Ports)
+## 4. Danh sách các cổng mạng (Ports)
 
 | Dịch vụ | Địa chỉ kết nối | Mô tả |
 | :--- | :--- | :--- |
-| **Backend Server** | `http://localhost:5000` | REST API (`/api/register`, `/api/login`) & Socket.io WebSocket Server |
+| **Backend Server** | `http://localhost:5000` | REST API (`/api/register`, `/api/login`) & Socket.io Server |
 | **Frontend Client** | `http://localhost:5173` | Giao diện người dùng Web (React Vite SPA) |
 
 ---
 
-## 🚀 Hướng dẫn cài đặt & Khởi chạy
+## 5. Hướng dẫn cài đặt và khởi chạy
 
-### 1. Yêu cầu tiên quyết (Prerequisites)
-- Đã cài đặt **Node.js** phiên bản `>= 18.0.0` (Khuyên dùng Node 20 LTS hoặc Node 24).
-- Trình quản lý gói **npm** phiên bản `>= 9.0.0`.
+### 5.1. Yêu cầu hệ thống
+- **Node.js** phiên bản `>= 18.0.0` (khuyên dùng Node 20 LTS hoặc Node 22 LTS).
+- **npm** phiên bản `>= 9.0.0`.
 
 Kiểm tra phiên bản trong terminal:
 ```bash
@@ -98,18 +92,14 @@ node -v
 npm -v
 ```
 
----
-
-### 2. Cài đặt các gói thư viện (Installation)
-
-Di chuyển vào thư mục `srcs` và chạy lệnh sau để tự động cài đặt dependencies cho cả Backend và Frontend:
-
+### 5.2. Cài đặt thư viện (Installation)
+Chuyển vào thư mục `srcs` và chạy lệnh cài đặt tự động cho cả Backend và Frontend:
 ```bash
 cd srcs
 npm run install:all
 ```
 
-*(Hoặc cài đặt thủ công từng thư mục nếu muốn):*
+*(Hoặc cài đặt thủ công từng phần):*
 ```bash
 cd srcs
 npm install
@@ -118,32 +108,24 @@ cd ../frontend && npm install
 cd ..
 ```
 
----
+### 5.3. Khởi chạy ứng dụng
 
-### 3. Khởi chạy ứng dụng (How to Run)
-
-#### Cách 1: Khởi chạy đồng thời cả hai môi trường (Khuyên dùng)
-Di chuyển vào thư mục `srcs` và chạy lệnh `npm run dev`:
-
+**Cách 1: Khởi chạy đồng thời bằng một lệnh duy nhất (Khuyên dùng)**
 ```bash
 cd srcs
 npm run dev
 ```
+Lệnh trên sẽ tự động khởi động song song:
+- Backend Socket.io tại `http://localhost:5000`.
+- Frontend Client tại `http://localhost:5173`.
 
-Lệnh này sẽ tự động khởi động đồng thời qua `concurrently`:
-- `[BACKEND]`: Server Socket.io tại `http://localhost:5000` (có cơ chế tự reload `--watch`).
-- `[FRONTEND]`: Ứng dụng React Vite tại `http://localhost:5173`.
-- Terminal hiển thị log tách biệt giữa `[BACKEND]` và `[FRONTEND]` giúp dễ dàng theo dõi.
-
-#### Cách 2: Khởi chạy trên 2 terminal độc lập
-
-- **Terminal 1 (Backend):**
+**Cách 2: Khởi chạy trên hai terminal riêng biệt**
+- Terminal 1 (Backend):
   ```bash
   cd srcs/backend
   npm run dev
   ```
-
-- **Terminal 2 (Frontend):**
+- Terminal 2 (Frontend):
   ```bash
   cd srcs/frontend
   npm run dev
@@ -151,28 +133,72 @@ Lệnh này sẽ tự động khởi động đồng thời qua `concurrently`:
 
 ---
 
-## 🧪 Hướng dẫn kiểm thử tính năng (Testing Flow)
+## 6. Hướng dẫn kiểm thử tính năng (Kịch bản thực nghiệm từ Báo cáo kỹ thuật)
 
-1. **Khởi chạy ứng dụng**: Chạy `npm run dev` và mở trình duyệt tới địa chỉ `http://localhost:5173`.
-2. **Đăng ký tài khoản mới**:
-   - Chọn tab **Đăng ký**, nhập Tên đăng nhập và Mật khẩu (ví dụ: `Alice` / `123456`).
-   - Nhấn **Tạo tài khoản**. Hệ thống lưu tài khoản vào `backend/database.json`.
-3. **Đăng nhập**:
-   - Chuyển sang tab **Đăng nhập**, nhập thông tin vừa tạo và bấm **Đăng nhập**.
-4. **Kiểm thử nhắn tin đa người dùng**:
-   - Mở thêm một tab trình duyệt khác (hoặc cửa sổ ẩn danh `Incognito`).
-   - Đăng ký và đăng nhập với tài khoản thứ hai (ví dụ: `Bob`).
-   - Cả 2 tài khoản cùng vào phòng `#general`.
-   - Gõ tin nhắn từ Tab 1 $\rightarrow$ Tab 2 nhận được ngay lập tức theo thời gian thực.
-   - Tin nhắn của người gửi hiển thị bên phải, tin nhắn của các thành viên khác hiển thị bên trái.
-5. **Kiểm thử gửi tệp đính kèm (Base64)**:
-   - Bấm vào biểu tượng **Kẹp giấy (Paperclip)** ở thanh nhập tin nhắn.
-   - Chọn một bức ảnh hoặc tệp tài liệu (PDF, Word, TXT...).
-   - Quan sát khung preview xuất hiện phía trên ô nhập. Có thể nhập thêm văn bản chú thích nếu muốn.
-   - Bấm **Gửi**. Phía người nhận sẽ hiển thị ảnh trực tiếp (đối với ảnh) hoặc khối tải về với nút Download (đối với tài liệu).
-6. **Kiểm thử lưu trữ & tải lại lịch sử**:
-   - F5 (Reload) lại trình duyệt hoặc bấm **Đăng xuất** rồi đăng nhập lại.
-   - Toàn bộ tin nhắn và tệp đính kèm đã gửi trước đó vẫn được tải lại đầy đủ từ `database.json`.
+Chi tiết kịch bản kiểm thử bảo mật được xây dựng theo chuẩn thực nghiệm trong **Chương 3 của Báo cáo kỹ thuật (`BaoCao_BTL1.pdf`)**, sử dụng mô hình hai thực thể kinh điển trong mật mã học: **`Alice`** (Chủ phòng / Người tạo và phân phối khóa) và **`Bob`** (Thành viên tham gia / Người nhận khóa).
 
----
+### Bước 1: Xác thực tài khoản
+1. Mở trình duyệt thứ nhất truy cập `http://localhost:5173`.
+2. Vào tab **Đăng ký**, tạo tài khoản chủ phòng: `Alice` (mật khẩu: `123456`). Chuyển sang tab **Đăng nhập** để vào ứng dụng.
+3. Mở trình duyệt thứ hai (hoặc cửa sổ ẩn danh Incognito) truy cập `http://localhost:5173`.
+4. Vào tab **Đăng ký**, tạo tài khoản thành viên: `Bob` (mật khẩu: `123456`) và đăng nhập.
 
+### Bước 2: Kiểm thử bắt tay RSA & Trao đổi Khóa phòng (Handshake & Watermark MSSV)
+1. Tài khoản **`Alice`** vào phòng `#general` trước:
+   - Vì phòng chưa có ai trực tuyến, Server phát sự kiện `init_room_key_holder`.
+   - `Alice` tự động khởi tạo Khóa phòng $K_{\text{master}}$ 256-bit tất định được băm SHA-256 từ 4 MSSV của nhóm:
+     `Kmaster = SHA-256("2433220_2410482_2213078_2252211_general")`
+   - Huy hiệu Header hiển thị: **Khóa E2EE: Sẵn sàng** (Chủ phòng INITIATOR).
+2. Tài khoản **`Bob`** tham gia cùng phòng `#general`:
+   - Phía `Bob` gửi sự kiện `join_room` kèm khóa công khai $K_{\text{pub}}^{\text{Bob}}$ lên Server.
+   - Server phát hiện `Alice` đang trực tuyến (`onlineDistributor`) và phát sự kiện `req_room_key_distribution`.
+   - `Alice` đóng gói Khóa phòng $K_{\text{master}}$ cùng thông điệp Watermarking:
+     ```json
+     {
+       "key": "<Kmaster_Hex>",
+       "message": "Hello, We are 2433220, 2410482, 2213078, 2252211"
+     }
+     ```
+   - Hàm `rsaEncrypt` tự động chia nhỏ chuỗi JSON thành các khối tối đa 80 ký tự (Chunked RSA), mã hóa bằng $K_{\text{pub}}^{\text{Bob}}$, ghép nối bằng ký tự `|` và gửi lên Server qua sự kiện `send_encrypted_room_key`.
+   - Server chuyển tiếp gói tin tới `Bob` qua sự kiện `receive_encrypted_room_key`.
+   - `Bob` dùng khóa riêng $K_{\text{priv}}^{\text{Bob}}$ giải mã từng phân đoạn, khôi phục chuỗi JSON và in thông điệp bản rõ ra DevTools Console:
+     `[Handshake Plaintext]: Hello, We are 2433220, 2410482, 2213078, 2252211`
+   - Bấm vào biểu tượng **Khóa E2EE: Sẵn sàng** trên thanh Header để mở **KeyDetailsModal**: xem trực quan cặp khóa RSA 1024-bit, Khóa phòng AES, khóa con HMAC và dòng thời gian các sự kiện bắt tay (**Handshake Timeline**).
+
+### Bước 3: Kiểm thử truyền tin nhắn và tệp đa phương tiện mã hóa (AES-256-GCM + HMAC-SHA256)
+1. **Gửi tin nhắn văn bản:**
+   - Từ tài khoản `Alice`, nhập tin nhắn `hello` và nhấn Gửi.
+   - Tin nhắn được mã hóa AES-256 với vector khởi tạo $IV$ ngẫu nhiên và ký xác thực bằng `HMAC-SHA256`.
+   - Tài khoản `Bob` nhận được tin nhắn tức thì, hiển thị bong bóng chat với huy hiệu **AES-256** và **HMAC OK** màu xanh lục, xác nhận giải mã thành công tại máy khách.
+2. **Gửi tệp đa phương tiện (Hình ảnh / Tài liệu):**
+   - Bấm biểu tượng kẹp giấy, chọn gửi tệp hình ảnh (ví dụ: `cat.png`, `images.jfif`) hoặc tệp tài liệu (PDF, Word, dung lượng tối đa 25MB).
+   - Dữ liệu tệp được chuyển sang Base64, mã hóa AES-256-GCM và gắn chữ ký HMAC riêng biệt.
+   - Phía người nhận hiển thị ảnh xem trước trực tiếp (inline preview) hoặc thẻ tải tài liệu về máy an toàn.
+
+### Bước 4: Kiểm thử bắt gói tin Wireshark & Đánh giá an toàn thực nghiệm (Mục 3.3 Báo cáo)
+1. Mở Wireshark, chọn card mạng `Adapter for loopback traffic capture` (hoặc card mạng Wi-Fi nếu thử nghiệm qua mạng LAN).
+2. Nhập bộ lọc hiển thị:
+   ```text
+   tcp.port == 5000 && websocket
+   ```
+3. Quan sát các gói tin được bắt:
+   - **Gói tin bắt tay RSA (`send_encrypted_room_key` / `receive_encrypted_room_key`):** Trường `encryptedKey` hoàn toàn là chuỗi Base64 bản mã phân đoạn. Kẻ nghe lén hoặc Server không có khóa riêng $K_{\text{priv}}^{\text{Bob}}$ nên không thể giải mã để lấy Khóa phòng hay đọc thông điệp Watermark.
+   - **Gói tin tin nhắn / tệp (`send_message` / `receive_message`):** Toàn bộ trường `text` và `attachment.data` đều là chuỗi Base64 Ciphertext ngẫu nhiên, vector $IV$ thay đổi độc lập cho từng gói tin, trường `hmac` bảo vệ toàn vẹn. Server chỉ hoạt động như đường ống chuyển tiếp mù (Zero-Knowledge Blind Relay).
+
+### Bước 5: Thực nghiệm 4 kịch bản tấn công theo mô hình đe dọa Dolev-Yao (Mục 3.3.4 Báo cáo)
+1. **Kịch bản 1 - Tấn công nghe lén (Sniffing):**
+   - Kẻ tấn công dùng Wireshark bắt gói tin trên cổng 5000. Dữ liệu văn bản và tệp tin đều ở dạng bản mã Base64, không lộ bất kỳ thông tin bản rõ nào.
+2. **Kịch bản 2 - Can thiệp sửa đổi gói tin (MitM Tampering):**
+   - Dùng Burp Suite bắt chặn (Intercept) gói tin `send_message` từ `Alice` gửi đến Server.
+   - Sửa đổi một vài ký tự trong chuỗi bản mã Base64 của trường `text`, sau đó nhấn Forward.
+   - Khi gói tin đến máy `Bob`, hàm `verifyHMAC` phát hiện chữ ký không khớp với nội dung, lập tức từ chối giải mã và hiển thị bong bóng chat màu đỏ với cảnh báo: **CẢNH BÁO BỊ GIẢ MẠO (MitM)**.
+3. **Kịch bản 3 - Tấn công giả mạo danh tính (Spoofing) từ bên trong:**
+   - Kẻ tấn công trong phòng dùng Burp Suite Repeater sửa đổi trường `sender` từ `"Alice"` thành `"Bob"`.
+   - Do kẻ tấn công không sở hữu khóa bí mật $K_{\text{HMAC}}$ của phòng để tạo lại chữ ký hợp lệ, máy nhận `verifyHMAC` phát hiện sai lệch và lập tức hất văng gói tin, nổ cảnh báo đỏ trên giao diện chat.
+4. **Kịch bản 4 - Máy chủ bị xâm phạm (Compromised Server - Đọc trộm & Sửa cơ sở dữ liệu):**
+   - *Thực nghiệm 1 (Honest-but-curious):* Mở tệp `srcs/backend/database.json`. Toàn bộ nội dung trò chuyện lưu trên đĩa đều là bản mã Base64 ngẫu nhiên, quản trị viên không thể đọc lén nội dung.
+   - *Thực nghiệm 2 (Data Tampering at Rest):* Quản trị viên can thiệp trực tiếp vào `database.json`, sửa `sender: "Bob"` thành `sender: "Alice"`. Khi người dùng F5 tải lại trang, máy khách đối soát HMAC thất bại và hiển thị cảnh báo đỏ **CẢNH BÁO: BỊ GIẢ MẠO (MitM)**.
+
+### Bước 6: Kiểm thử tính năng Reset tiến trình test
+1. Bấm nút **Reset tiến trình test** trên thanh Header.
+2. Hệ thống phát sự kiện `reset_room_test`: xóa toàn bộ tin nhắn của phòng trong cơ sở dữ liệu, hủy khóa phòng trong `localStorage`, và tự động đồng bộ đăng xuất tất cả các tab trình duyệt về màn hình đăng nhập để sẵn sàng cho phiên kiểm thử mới.
